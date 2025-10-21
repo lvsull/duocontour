@@ -17,14 +17,36 @@ def load_oasis(filename = "brain"):
         patient_dir = os.path.join(data_path, folder)
         if os.path.isdir(patient_dir):
             img = nib.load(os.path.join(patient_dir, f"mri/{filename}.mgz"))
-            if img.get_fdata(caching="unchanged").shape != (256, 256, 256):
-                raise Exception("Unexpected shape:", img.get_fdata(caching="unchanged").shape)
-            else:
-                images[folder] = img
+            images[folder] = img
 
     print("OASIS images loaded (", sys.getsizeof(images), " bytes)", sep="")
 
     return images
 
+def load_candi(filename = "procimg"):
+
+    images = {}
+
+    with open("localdata.json", 'r') as json_file:
+        candi_path = json.load(json_file).get("candi")
+
+    data_path = os.path.join(candi_path, "data")
+
+    for folder in tqdm(os.listdir(data_path), desc="CANDI"):
+        group_dir = os.path.join(data_path, folder)
+        if os.path.isdir(group_dir):
+            for patient_folder in os.listdir(group_dir):
+                patient_dir = os.path.join(group_dir, patient_folder)
+                if os.path.isdir(patient_dir):
+                    img = nib.load(os.path.join(patient_dir, f"{patient_folder}_{filename}.nii.gz"))
+                    images[patient_folder] = img
+
+    print("CANDI images loaded (", sys.getsizeof(images), " bytes)", sep="")
+
+    return images
+
+
 if __name__ == "__main__":
-    images = load_oasis()
+    images = load_oasis() | load_candi()
+
+    print("All images loaded (", sys.getsizeof(images), " bytes)", sep="")
