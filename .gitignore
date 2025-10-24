@@ -1,4 +1,5 @@
 OASIS/
+.idea/
 localdata.json
 *.pkl
 *.csv
