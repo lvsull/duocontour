@@ -2,7 +2,6 @@ import os
 import json
 import nibabel as nib
 from tqdm import tqdm
-import sys
 
 def load_oasis(filename = "brain"):
 
@@ -19,8 +18,6 @@ def load_oasis(filename = "brain"):
             img = nib.load(os.path.join(patient_dir, f"mri/{filename}.mgz"))
             images[folder] = img
 
-    print("OASIS images loaded (", sys.getsizeof(images), " bytes)", sep="")
-
     return images
 
 def load_candi(filename = "procimg"):
@@ -32,21 +29,19 @@ def load_candi(filename = "procimg"):
 
     data_path = os.path.join(candi_path, "data")
 
-    for folder in tqdm(os.listdir(data_path), desc="CANDI"):
+    bar_total = 0
+    for p in os.listdir(data_path):
+        bar_total += len(os.listdir(os.path.join(data_path, p)))
+    bar = tqdm(total=bar_total, desc="CANDI")
+
+    for folder in os.listdir(data_path):
         group_dir = os.path.join(data_path, folder)
         if os.path.isdir(group_dir):
             for patient_folder in os.listdir(group_dir):
+                bar.update()
                 patient_dir = os.path.join(group_dir, patient_folder)
                 if os.path.isdir(patient_dir):
                     img = nib.load(os.path.join(patient_dir, f"{patient_folder}_{filename}.nii.gz"))
                     images[patient_folder] = img
 
-    print("CANDI images loaded (", sys.getsizeof(images), " bytes)", sep="")
-
     return images
-
-
-if __name__ == "__main__":
-    images = load_oasis() | load_candi()
-
-    print("All images loaded (", sys.getsizeof(images), " bytes)", sep="")
