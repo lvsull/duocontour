@@ -53,4 +53,4 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> 
         start_time = time.time()
         print("Writing to file...", end="", flush=True)
         norm_data.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
-        print(" DONE! (", time.time() - start_time, " sec)", sep="")
+        print(" DONE! (", np.round((time.time() - start_time) / 60, 2), " min)", sep="")

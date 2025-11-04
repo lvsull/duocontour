@@ -10,6 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 import pickle
 import time
+import numpy as np
 
 
 def load_oasis(filename: str = "brain") -> pd.DataFrame:
@@ -75,6 +76,6 @@ def load_data(sql_engine):
     start_time = time.time()
     print("Writing to file...", end="", flush=True)
     images.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", time.time() - start_time, " sec)", sep="")
+    print(" DONE! (", np.round(time.time() - start_time, 3), " sec)", sep="")
 
     return images
