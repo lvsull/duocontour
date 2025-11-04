@@ -3,6 +3,8 @@ import torch
 import json
 from sqlalchemy import create_engine
 import pandas as pd
+import sys
+import pickle
 
 if __name__ == "__main__":
 
@@ -14,13 +16,14 @@ if __name__ == "__main__":
         print("Using device: CPU")
 
     with open("localdata.json") as json_file:
-        database_location = json.load(json_file)
+        database_location = json.load(json_file).get("database")
 
     engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    load_data(engine)
+    # load_data(engine)
 
     with engine.connect() as conn:
-        top = pd.read_sql_query("SELECT * FROM images LIMIT 5", conn)
+        data = pd.read_sql_query("SELECT image FROM images", conn)
 
-    print(top)
+        for image in data.loc[:, "image"]:
+            print(pickle.loads(image).get_fdata())

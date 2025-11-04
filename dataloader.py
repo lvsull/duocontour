@@ -55,6 +55,6 @@ def load_data(sql_engine):
     start_time = time.time()
     print("Writing to file...", end="", flush=True)
     images.to_sql(name="images", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time.time() - start_time) / 60, " min)", sep="")
+    print(" DONE! (", time.time() - start_time, " sec)", sep="")
 
     return images
