@@ -1,3 +1,8 @@
+"""
+10/14/25
+Provides tools to load data from an external file source
+"""
+
 import os
 import json
 import nibabel as nib
@@ -6,8 +11,15 @@ from tqdm import tqdm
 import pickle
 import time
 
-def load_oasis(filename = "brain"):
 
+def load_oasis(filename: str = "brain") -> pd.DataFrame:
+    """
+    Loads OASIS data into a DataFrame from the location specified in localdata.json
+    :param filename: *optional, default "brain"* The file name of the OASIS data file, in .mgz format
+    :type filename: str
+    :return: DataFrame containing the OASIS data
+    :rtype: pd.DataFrame, columns=["name", "image"]
+    """
     images = pd.DataFrame(columns=["name", "image"])
 
     with (open("localdata.json", 'r')) as json_file:
@@ -23,7 +35,15 @@ def load_oasis(filename = "brain"):
 
     return images
 
-def load_candi(filename = "procimg"):
+
+def load_candi(filename: str = "procimg") -> pd.DataFrame:
+    """
+    Loads CANDI data into a DataFrame from the location specified in localdata.json
+    :param filename: *optional, default "procimg"* The file name of the CANDI data file, in .nii.gz format
+    :type filename: str
+    :return: DataFrame containing the CANDI data
+    :rtype: pd.DataFrame, columns=["name", "image"]
+    """
 
     images = pd.DataFrame(columns=["name", "image"])
 
@@ -54,7 +74,7 @@ def load_data(sql_engine):
 
     start_time = time.time()
     print("Writing to file...", end="", flush=True)
-    images.to_sql(name="images", con=sql_engine, if_exists="replace", index=False)
+    images.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
     print(" DONE! (", time.time() - start_time, " sec)", sep="")
 
     return images
