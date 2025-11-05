@@ -26,6 +26,6 @@ if __name__ == "__main__":
 
     engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    load_data(engine)
+    # load_data(engine)
 
     normalize(engine)
