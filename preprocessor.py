@@ -1,6 +1,7 @@
 """
 10/4/25
 """
+from cProfile import label
 
 import pandas as pd
 import pickle
@@ -10,6 +11,9 @@ import sqlalchemy
 from tqdm import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
+import SimpleITK as sitk
+import nibabel as nib
+from nilearn import datasets, image, plotting
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> None:
     """
@@ -20,8 +24,8 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> 
     :type table: str
     :return: None
     """
-    with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table} LIMIT 10", conn)
+    with (sql_engine.connect() as conn):
+        data = pd.read_sql_query(f"SELECT * FROM {table} ORDER BY RANDOM() LIMIT 5", conn)
 
         # def update_mean(mean, num_samples, new_num):
         #     return ((mean * (num_samples - 1)) + new_num) / num_samples
@@ -67,36 +71,97 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> 
         # mean = sum([means[i] * batch_sizes[i] for i in range(len(means))]) / len(data)
         # stdev =
 
-        for image in data.loc[:, "image"]:
-            fdata = pickle.loads(image).get_fdata(caching="unchanged")
+        fig, ax = plt.subplots(2, 1)
+        # ax[0].set_xlim(-0.5, 2)
+        ax[1].set_xlim(-0.5, 2)
+
+        for i, row in tqdm(data.iterrows(), total=len(data)):
+            # print(row["name"])
+            fdata = pickle.loads(row["image"]).get_fdata(caching="unchanged")
             orig_shape = fdata.shape
-            data = fdata.flatten()
-            mean = np.mean(data)
-            stdev = np.std(data)
-            data = np.array(list(map(lambda x: ((x - mean) / stdev) * 10, data)))
-            hist = np.histogram(data, bins=np.linspace(-3, 115, 100))
-            print(min(data), max(data))
-            print(hist)
-            plt.hist(hist[0], hist[1], alpha=0.5)
+            masked_data = np.ma.masked_equal(fdata.flatten(), 0)
+            # print(masked_data.min(), masked_data.max())
+            counts, bins = np.histogram(masked_data.compressed(), bins=np.linspace(0, 125, 400))
+            ax[0].stairs(counts, bins)
+            mean = np.mean(masked_data)
+            stdev = np.std(masked_data)
+            # print(mean, stdev)
+            # print(data)
+            masked_data -= mean
+            masked_data /= stdev
+            # print(data)
+            # print(data.shape)
+            counts, bins = np.histogram(masked_data.compressed(), bins=np.linspace(-0.2, 12, 400))
+            ax[1].stairs(counts, bins)
+            # print(min(data), max(data))
+            # print(counts, bins)
 
         plt.show()
 
-        print(mean)
-        print(stdev)
+        # norm_data = pd.DataFrame(columns=["name", "image"])
+        #
+        # for image_tuple in tqdm(data.itertuples(), desc="Normalizing images"):
+        #     fdata = pickle.loads(image_tuple.image).get_fdata()
+        #     for x in tqdm(range(len(fdata)), leave=False):
+        #         for y in range(len(fdata[x])):
+        #             for z in range(len(fdata[x][y])):
+        #                 value = fdata[x][y][z]
+        #                 if value != 0:
+        #                     value -= mean
+        #                     value /= stdev
+        #                     fdata[x][y][z] = value
+        #
+        #     norm_data[len(norm_data)] = [image_tuple.name, fdata]
+        #
+        # start_time = time.time()
+        # print("Writing to file...", end="", flush=True)
+        # # norm_data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+        # print(" DONE! (", np.round((time.time() - start_time) / 60, 2), " min)", sep="")
 
-        norm_data = pd.DataFrame(columns=["name", "image"])
+def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> None:
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-        for image_tuple in tqdm(data.itertuples(), desc="Normalizing images"):
-            fdata = pickle.loads(image_tuple.image).get_fdata()
-            for x in range(len(fdata)):
-                for y in range(len(fdata[x])):
-                    for z in range(len(fdata[x][y])):
-                        if fdata[x][y][z] != 0:
-                            fdata[x][y][z] = (fdata[x][y][z] - mean) / stdev
+    corrector = sitk.N4BiasFieldCorrectionImageFilter()
 
-                            norm_data[len(norm_data)] = [image_tuple.name, fdata[x][y][z]]
+    for image_tuple in tqdm(data.itertuples(), total=len(data)):
+        fdata = pickle.loads(image_tuple.image).get_fdata()
+        image = sitk.GetImageFromArray(fdata)
+        mask_image = sitk.OtsuThreshold(image, 0, 1, 200)
 
-        start_time = time.time()
-        print("Writing to file...", end="", flush=True)
-        norm_data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
-        print(" DONE! (", np.round((time.time() - start_time) / 60, 2), " min)", sep="")
+        corrected_image = corrector.Execute(image, mask_image)
+        corrected_array = sitk.GetArrayFromImage(corrected_image)
+
+        data.loc[image_tuple.Index, "image"] = corrected_array
+
+    data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+
+def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", dimensions: tuple = (256, 256, 256)) -> None:
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {table} ORDER BY RANDOM() LIMIT 3", conn)
+
+    mni_template_orig = datasets.load_mni152_template()
+    mni_template_data = mni_template_orig.get_fdata()
+    mni_shape = mni_template_data.shape
+    x_diff = dimensions[0] - mni_shape[0]
+    y_diff = dimensions[1] - mni_shape[1]
+    z_diff = dimensions[2] - mni_shape[2]
+    padded_mni_template_data = np.pad(mni_shape, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
+                                                  int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2)),
+                                                  int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2))),
+                                      mode="constant", constant_values=0)
+    mni_template = nib.Nifti1Image(padded_mni_template_data, mni_template_orig.affine)
+
+    plotting.plot_img(mni_template, cut_coords=(0, 0, 0))
+
+    image_df = pd.DataFrame(columns=["name", "image"])
+
+    for image_tuple in data.itertuples():
+        subject_image = pickle.loads(image_tuple.image)
+        mapped_image = image.resample_to_img(subject_image, mni_template, force_resample=True, copy_header=True)
+        image_df.loc[len(image_df)] = [image_tuple.name, mapped_image.get_fdata()]
+        plotting.plot_img(subject_image, cut_coords=(0, 0, 0))
+        plotting.plot_img(mapped_image, cut_coords=(0, 0, 0))
+
+    plotting.show()
+    print()
