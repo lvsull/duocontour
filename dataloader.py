@@ -25,7 +25,7 @@ def load_data(sql_engine, filename: str = "brainmask") -> None:
 
     for dataset_name in ("OASIS", "CANDI"):
         with (open("localdata.json", 'r')) as json_file:
-            data_path = json.load(json_file).get(dataset_name.lower())
+            data_path = os.path.join(json.load(json_file).get("raw"), dataset_name)
 
         data_path = os.path.join(data_path, "data")
 

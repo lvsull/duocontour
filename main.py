@@ -11,7 +11,7 @@ import torch
 from dataloader import load_data
 from sqlalchemy import create_engine
 from tqdm import tqdm
-from preprocessor import normalize
+from preprocessor import normalize, correct_bias_fields, map_to_mni
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
@@ -28,4 +28,6 @@ if __name__ == "__main__":
 
     # load_data(engine)
 
-    normalize(engine)
+    correct_bias_fields(engine)
+    # normalize(engine)
+    # map_to_mni(engine)
