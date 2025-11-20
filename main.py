@@ -3,14 +3,9 @@
 """
 
 import json
-import pickle
-
-import numpy as np
-import pandas as pd
 import torch
-from dataloader import load_data
 from sqlalchemy import create_engine
-from tqdm import tqdm
+from dataloader import load_data
 from preprocessor import normalize, correct_bias_fields, map_to_mni
 
 if __name__ == "__main__":
