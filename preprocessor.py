@@ -5,6 +5,9 @@
 import pandas as pd
 import pickle
 import time
+import os
+import shutil
+import json
 
 import sqlalchemy
 from tqdm import tqdm
@@ -19,18 +22,31 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
 
     corrector = sitk.N4BiasFieldCorrectionImageFilter()
 
+    with open("localdata.json") as json_file:
+        save_path = json.load(json_file).get("bias_corrected")
+    try:
+        shutil.rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    os.mkdir(save_path)
+
     for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Correcting Bias Fields"):
         orig_image = pickle.loads(image_tuple.image)
-        fdata = orig_image.get_fdata(caching="unchanged", dtype=np.float32)
+        fdata = orig_image.get_fdata(caching="unchanged")
         image = sitk.GetImageFromArray(fdata)
         mask_image = sitk.OtsuThreshold(image, 0, 1, 200)
 
         corrected_image_itk = corrector.Execute(image, mask_image)
         corrected_array = sitk.GetArrayFromImage(corrected_image_itk)
 
-        corrected_image = nib.freesurfer.mghformat.MGHImage(corrected_array, orig_image.affine, orig_image.header)
+        corrected_image = nib.Nifti1Image(corrected_array, orig_image.affine, orig_image.header)
 
-        data.loc[image_tuple.Index, "image"] = pickle.dumps(corrected_image)
+        filepath = os.path.join(save_path, f"{image_tuple.name}.nii.gz")
+        nib.save(corrected_image, filepath)
+
+        corrected_image_view = nib.load(filepath)
+
+        data.loc[image_tuple.Index, "image"] = pickle.dumps(corrected_image_view)
 
     start_time = time.time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
