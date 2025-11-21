@@ -6,7 +6,7 @@ import json
 import torch
 from sqlalchemy import create_engine
 from dataloader import load_data
-from preprocessor import normalize, correct_bias_fields, map_to_mni
+from preprocessor import pad_images, correct_bias_fields, normalize, map_to_mni
 
 if __name__ == "__main__":
     if torch.cuda.is_available():
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
     # load_data(engine)
-
-    correct_bias_fields(engine)
+    pad_images(engine)
+    # correct_bias_fields(engine)
     # normalize(engine)
     # map_to_mni(engine)

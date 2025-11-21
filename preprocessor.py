@@ -15,7 +15,45 @@ import SimpleITK as sitk
 import nibabel as nib
 from nilearn import datasets, image, plotting
 
-def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw") -> None:
+
+def save_and_get_view(arr, orig_image, save_path, name):
+    corrected_image = nib.Nifti1Image(arr, orig_image.affine, orig_image.header)
+
+    filepath = path.join(save_path, f"{name}.nii.gz")
+    nib.save(corrected_image, filepath)
+
+    return nib.load(filepath)
+
+
+def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", dimensions=(256, 256, 256)) -> None:
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("padded")
+
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+
+    for image_tuple in data.itertuples():
+        orig_image = loads(image_tuple.image)
+        fdata = orig_image.get_fdata(caching="unchanged")
+        shape = fdata.shape
+        x_diff = dimensions[0] - shape[0]
+        y_diff = dimensions[1] - shape[1]
+        z_diff = dimensions[2] - shape[2]
+        padded_arr = np.pad(fdata, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
+                                    (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
+                                    (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))))
+
+        padded_image_view = save_and_get_view(padded_arr, orig_image, save_path, image_tuple.name)
+
+        data.loc[image_tuple.Index, "image"] = dumps(padded_image_view)
+
+    start_time = time()
+    print(f"Writing {len(data)} rows to file...", end="", flush=True)
+    data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
+    print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+
+
+def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
     """
     Corrects bias fields of images stored on a SQL table
     :param sql_engine: The SLQLAlchemy engine to use
@@ -32,6 +70,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
 
     with open("localdata.json") as json_file:
         save_path = load(json_file).get("bias_corrected")
+
     try:
         rmtree(save_path)
     except FileNotFoundError:
@@ -47,12 +86,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
         corrected_image_itk = corrector.Execute(image, mask_image)
         corrected_array = sitk.GetArrayFromImage(corrected_image_itk)
 
-        corrected_image = nib.Nifti1Image(corrected_array, orig_image.affine, orig_image.header)
-
-        filepath = path.join(save_path, f"{image_tuple.name}.nii.gz")
-        nib.save(corrected_image, filepath)
-
-        corrected_image_view = nib.load(filepath)
+        corrected_image_view = (corrected_array, orig_image, save_path, image_tuple.name)
 
         data.loc[image_tuple.Index, "image"] = dumps(corrected_image_view)
 
@@ -60,6 +94,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
     print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corrected") -> None:
     """
@@ -71,12 +106,23 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     :return: None
     :rtype: NoneType
     """
+
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("normalized")
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
     print(len(data))
 
     for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Normalizing Images"):
-        fdata = loads(image_tuple.image).get_fdata(caching="unchanged")
+        orig_image = loads(image_tuple.image)
+        fdata = orig_image.get_fdata(caching="unchanged")
         orig_shape = fdata.shape
         masked_data = np.ma.masked_equal(fdata.flatten(), 0)
         mean = np.mean(masked_data)
@@ -84,13 +130,17 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
         masked_data -= mean
         masked_data /= stdev
 
-        norm_image = masked_data.reshape(orig_shape).filled(fill_value=0)
-        data.loc[image_tuple.Index, "image"] = norm_image
+        norm_image_arr = masked_data.reshape(orig_shape).filled(fill_value=0)
+
+        norm_image_view = save_and_get_view(norm_image_arr, orig_image, save_path, image_tuple.name)
+
+        data.loc[image_tuple.Index, "image"] = dumps(norm_image_view)
 
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
     print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+
 
 def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
                dimensions: tuple = (256, 256, 256)) -> None:
@@ -103,9 +153,9 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
     x_diff = dimensions[0] - mni_shape[0]
     y_diff = dimensions[1] - mni_shape[1]
     z_diff = dimensions[2] - mni_shape[2]
-    padded_mni_template_data = np.pad(mni_shape, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
-                                                  int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2)),
-                                                  int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2))),
+    padded_mni_template_data = np.pad(mni_template_data, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
+                                                          (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
+                                                          (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))),
                                       mode="constant", constant_values=0)
     mni_template = nib.Nifti1Image(padded_mni_template_data, mni_template_orig.affine)
 
