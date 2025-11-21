@@ -26,13 +26,19 @@ def save_and_get_view(arr, orig_image, save_path, name):
 
 
 def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", dimensions=(256, 256, 256)) -> None:
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get("padded")
-
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    for image_tuple in data.itertuples():
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("padded")
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Padding Images"):
         orig_image = loads(image_tuple.image)
         fdata = orig_image.get_fdata(caching="unchanged")
         shape = fdata.shape
@@ -50,7 +56,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+    print(" DONE! (", time() - start_time, " sec)", sep="")
 
 
 def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
@@ -107,6 +113,9 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     :rtype: NoneType
     """
 
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+
     with open("localdata.json") as json_file:
         save_path = load(json_file).get("normalized")
 
@@ -115,10 +124,6 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     except FileNotFoundError:
         pass
     mkdir(save_path)
-
-    with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-    print(len(data))
 
     for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Normalizing Images"):
         orig_image = loads(image_tuple.image)
