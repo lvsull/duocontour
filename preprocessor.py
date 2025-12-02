@@ -13,7 +13,7 @@ from tqdm import tqdm
 import numpy as np
 import SimpleITK as sitk
 import nibabel as nib
-from nilearn import datasets, image, plotting
+from nilearn import datasets, image
 
 
 def save_and_get_view(arr, orig_image, save_path, name):
@@ -56,7 +56,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", time() - start_time, " sec)", sep="")
+    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
 
 
 def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
@@ -92,14 +92,14 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
         corrected_image_itk = corrector.Execute(image, mask_image)
         corrected_array = sitk.GetArrayFromImage(corrected_image_itk)
 
-        corrected_image_view = (corrected_array, orig_image, save_path, image_tuple.name)
+        corrected_image_view = save_and_get_view(corrected_array, orig_image, save_path, image_tuple.name)
 
         data.loc[image_tuple.Index, "image"] = dumps(corrected_image_view)
 
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
 
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corrected") -> None:
@@ -144,13 +144,22 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round((time() - start_time) / 60, 2), " min)", sep="")
+    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
 
 
 def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
                dimensions: tuple = (256, 256, 256)) -> None:
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table} ORDER BY RANDOM() LIMIT 3", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("preprocessed")
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
 
     mni_template_orig = datasets.load_mni152_template()
     mni_template_data = mni_template_orig.get_fdata()
@@ -162,18 +171,25 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
                                                           (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
                                                           (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))),
                                       mode="constant", constant_values=0)
-    mni_template = nib.Nifti1Image(padded_mni_template_data, mni_template_orig.affine)
-
-    plotting.plot_img(mni_template, cut_coords=(0, 0, 0))
+    orig_affine = mni_template_orig.affine
+    mni_template = nib.Nifti1Image(padded_mni_template_data,
+                                   affine=np.asarray([[1, 0, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 1, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 0, 1] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 0, 0, 1]]))
 
     image_df = pd.DataFrame(columns=["name", "image"])
 
-    for image_tuple in data.itertuples():
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Mapping to MNI Space"):
         subject_image = loads(image_tuple.image)
         mapped_image = image.resample_to_img(subject_image, mni_template, force_resample=True, copy_header=True)
         image_df.loc[len(image_df)] = [image_tuple.name, mapped_image.get_fdata()]
-        plotting.plot_img(subject_image, cut_coords=(0, 0, 0))
-        plotting.plot_img(mapped_image, cut_coords=(0, 0, 0))
 
-    plotting.show()
-    print()
+        mapped_image_view = save_and_get_view(mapped_image.get_fdata(), mapped_image, save_path, image_tuple.name)
+
+        data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
+
+    start_time = time()
+    print(f"Writing {len(data)} rows to file...", end="", flush=True)
+    data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
