@@ -9,7 +9,7 @@ import nibabel as nib
 import pandas as pd
 from tqdm import tqdm
 import pickle
-import time
+from time import time
 import numpy as np
 
 
@@ -38,4 +38,4 @@ def load_data(sql_engine, filename: str = "brainmask") -> None:
     start_time = time.time()
     print("Writing to file...", end="", flush=True)
     images.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round(time.time() - start_time, 2), " sec)", sep="")
+    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")

@@ -56,7 +56,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
+    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
@@ -99,7 +99,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
+    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corrected") -> None:
@@ -144,7 +144,7 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
+    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
@@ -192,4 +192,4 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
     start_time = time()
     print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", np.round(time() - start_time, 2), " sec)", sep="")
+    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
