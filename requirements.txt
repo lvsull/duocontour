@@ -7,3 +7,4 @@ pandas~=2.3.3
 numpy~=2.3.5
 simpleitk~=2.5.3
 nilearn~=0.12.1
+./lib/pytorch-3dunet-1.9.6
