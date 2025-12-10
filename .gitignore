@@ -1,4 +1,4 @@
-OASIS/
-.idea/
-.venv/
+/.idea/
+/.venv/
 /localdata.json
+/unet/train/
