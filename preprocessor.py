@@ -53,10 +53,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
 
         data.loc[image_tuple.Index, "image"] = dumps(padded_image_view)
 
-    start_time = time()
-    print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
@@ -96,10 +93,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
 
         data.loc[image_tuple.Index, "image"] = dumps(corrected_image_view)
 
-    start_time = time()
-    print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corrected") -> None:
@@ -141,10 +135,7 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
 
         data.loc[image_tuple.Index, "image"] = dumps(norm_image_view)
 
-    start_time = time()
-    print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
 
 
 def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
@@ -189,7 +180,4 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
 
         data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
 
-    start_time = time()
-    print(f"Writing {len(data)} rows to file...", end="", flush=True)
     data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
