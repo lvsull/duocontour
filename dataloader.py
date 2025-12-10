@@ -12,14 +12,19 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import sqlalchemy
 
 
-def load_data(sql_engine, filename: str = "brainmask") -> None:
+def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str = "brainmask", save_table: str = "raw") -> None:
     """
-    Loads OASIS data into a DataFrame from the location specified in localdata.json
+    Loads all image data into a DataFrame from the location specified in localdata.json
+    :param sql_engine: SQLAlchemy engine object for the database file
+    :type sql_engine: sqlalchemy.engine.Engine
     :param filename: *optional, default "brain"* The file name of the OASIS data file, in .mgz format
     :type filename: str
-    :return: DataFrame containing the OASIS data
+    :param save_table: *optional, default "raw"* The table name where the data will be saved
+    :type save_table: str
+    :return: DataFrame containing the image data
     :rtype: pd.DataFrame, columns=["name", "image"]
     """
     images = pd.DataFrame(columns=["name", "image"])
@@ -36,4 +41,4 @@ def load_data(sql_engine, filename: str = "brainmask") -> None:
                 img = nib.load(os.path.join(patient_dir, f"mri/{filename}.mgz"))
                 images.loc[len(images)] = [folder, pickle.dumps(img)]
 
-    images.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
+    images.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
