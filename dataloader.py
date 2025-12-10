@@ -3,14 +3,15 @@
 Provides tools to load data from an external file source
 """
 
-import os
 import json
-import nibabel as nib
-import pandas as pd
-from tqdm import tqdm
+import os
 import pickle
 from time import time
+
+import nibabel as nib
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 
 def load_data(sql_engine, filename: str = "brainmask") -> None:
@@ -35,7 +36,4 @@ def load_data(sql_engine, filename: str = "brainmask") -> None:
                 img = nib.load(os.path.join(patient_dir, f"mri/{filename}.mgz"))
                 images.loc[len(images)] = [folder, pickle.dumps(img)]
 
-    start_time = time.time()
-    print("Writing to file...", end="", flush=True)
     images.to_sql(name="raw", con=sql_engine, if_exists="replace", index=False)
-    print(" DONE! (", (time() - start_time) / 1000, " ms)", sep="")
