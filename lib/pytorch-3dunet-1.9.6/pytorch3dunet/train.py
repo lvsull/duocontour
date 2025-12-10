@@ -13,14 +13,14 @@ from pytorch3dunet.unet3d.utils import get_logger
 logger = get_logger("TrainingSetup")
 
 
-def main():
+def main(config_file):
     """Main entry point for training 3D U-Net models.
 
     Loads configuration from command line arguments, sets random seeds if specified,
     creates a trainer instance, and starts the training process.
     """
     # Load and log experiment configuration
-    config, config_path = load_config()
+    config, config_path = load_config(config_file)
     logger.info(config)
 
     manual_seed = config.get("manual_seed", None)

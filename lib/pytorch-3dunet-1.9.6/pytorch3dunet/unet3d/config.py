@@ -68,17 +68,25 @@ def override_config(args, config):
                 c[k] = value
 
 
-def load_config() -> tuple[dict, str]:
-    parser = argparse.ArgumentParser(description="UNet3D")
-    parser.add_argument("--config", type=str, help="Path to the YAML config file", required=True)
-    # add additional command line arguments for the prediction that override the ones in the config file
-    parser.add_argument("--model_path", type=str, required=False)
-    parser.add_argument("--loaders.output_dir", type=str, required=False)
-    parser.add_argument("--loaders.test.file_paths", type=str, nargs="+", required=False)
-    parser.add_argument("--loaders.test.slice_builder.patch_shape", type=int, nargs="+", required=False)
-    parser.add_argument("--loaders.test.slice_builder.stride_shape", type=int, nargs="+", required=False)
+def load_config(config) -> tuple[dict, str]:
+    # parser = argparse.ArgumentParser(description="UNet3D")
+    # parser.add_argument("--config", type=str, help="Path to the YAML config file", required=True)
+    # # add additional command line arguments for the prediction that override the ones in the config file
+    # parser.add_argument("--model_path", type=str, required=False)
+    # parser.add_argument("--loaders.output_dir", type=str, required=False)
+    # parser.add_argument("--loaders.test.file_paths", type=str, nargs="+", required=False)
+    # parser.add_argument("--loaders.test.slice_builder.patch_shape", type=int, nargs="+", required=False)
+    # parser.add_argument("--loaders.test.slice_builder.stride_shape", type=int, nargs="+", required=False)
+    #
+    # args = parser.parse_args()
+    # print(args)
 
-    args = parser.parse_args()
+    args = argparse.Namespace(config=config, model_path=None,
+                              **{'loaders.output_dir': None,
+                                 'loaders.test.file_paths': None,
+                                 'loaders.test.slice_builder.patch_shape': None,
+                                 'loaders.test.slice_builder.stride_shape': None})
+
     config_path = args.config
     config = _load_config_yaml(config_path)
     override_config(args, config)
