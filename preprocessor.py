@@ -1,6 +1,7 @@
 """
 10/4/25
 """
+import copy
 
 import pandas as pd
 from pickle import dumps, loads
@@ -181,3 +182,44 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
         data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
 
     data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+
+def impute_unknown(sql_engine):
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM raw_label", conn)
+
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("imputed_label")
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values"):
+        orig_image = loads(subject.image)
+        fdata = orig_image.get_fdata()
+        for slc, row, col in np.argwhere((fdata == 29) | (fdata == 61)
+                                         | (fdata == 78) | (fdata == 79) | (fdata == 80) | (fdata == 81) | (fdata == 82)
+                                         | (fdata == 251) | (fdata == 252) | (fdata == 253)
+                                         | (fdata == 254) | (fdata == 255)):
+            match fdata[slc][row][col]:
+                case 29 | 61:  # unknown value
+                    values = []
+                    for x in range(-1, 2):
+                        for y in range(-1, 2):
+                            val = fdata[slc][row + y][col + x]
+                            if not (x == 0 and y == 0) and not (val == 29 or val == 61):
+                                values.append(val)
+                    fdata[slc][row][col] = max(values, key=values.count)
+                    break
+                case 78 | 79 | 80 | 81 | 82:  # hypointensities
+                    fdata[slc][row][col] = 77
+                    break
+                case 251 | 252 | 253 | 254 | 255:  # corpus callosum segmentation, should not exist
+                    raise ValueError("CC value encountered")
+
+        imputed_label_view = save_and_get_view(fdata, orig_image, save_path, subject.name)
+        data.loc[subject.Index, "image"] = dumps(imputed_label_view)
+
+    data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
