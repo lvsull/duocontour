@@ -218,7 +218,7 @@ def impute_unknown(sql_engine):
         pass
     mkdir(save_path)
 
-    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values", bar_format=bf):
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Labels", bar_format=bf):
         orig_image = loads(subject.image)
         fdata = orig_image.get_fdata().astype(np.int_)
         for slc, row, col in np.argwhere((fdata == 29) | (fdata == 61)
@@ -268,7 +268,7 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine) -> None:
 
     labels = pd.read_csv("seg_values.csv")["SegID"]
 
-    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values", bar_format=bf):
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Correcting Label Values", bar_format=bf):
         orig_image = loads(subject.image)
         fdata = orig_image.get_fdata().astype(np.int_)
         for slc, row, col in np.argwhere(fdata != 0):
