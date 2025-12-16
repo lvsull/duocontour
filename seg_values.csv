@@ -17,7 +17,6 @@ SegID,StructName
 24,CSF
 26,Left-Accumbens-area
 28,Left-VentralDC
-29,Left-undetermined
 30,Left-vessel
 41,Right-Cerebral-White-Matter
 42,Right-Cerebral-Cortex
@@ -33,7 +32,6 @@ SegID,StructName
 54,Right-Amygdala
 58,Right-Accumbens-area
 60,Right-VentralDC
-61,Right-undetermined
 62,Right-vessel
 72,5th-Ventricle
 77,WM-hypointensities

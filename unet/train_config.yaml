@@ -7,7 +7,7 @@ model:
   # number of input channels to the model
   in_channels: 1
   # number of classes
-  out_channels: 3
+  out_channels: 37
   # determines the order of operators in a single layer (gcr - GroupNorm+Conv3d+ReLU)
   layer_order: gcr
   # number of features at each level of the U-Net
@@ -135,7 +135,7 @@ loaders:
   val:
     # paths to the val datasets
     file_paths:
-      - unet/val.hdf5
+      - unet/label
 
     # SliceBuilder configuration, i.e. how to iterate over the input volume patch-by-patch
     slice_builder:
