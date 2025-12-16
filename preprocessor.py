@@ -140,12 +140,25 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
 
 
 def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
-               dimensions: tuple = (256, 256, 256)) -> None:
+               dimensions: tuple = (256, 256, 256), save_name: str = "preprocessed") -> None:
+    """
+    Map images from a SQL table to the MNI152 space
+    :param sql_engine: The SQLAlchemy engine to use
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :param table: *optional, default "normalized"* The SQL table to read images from
+    :type table: str
+    :param dimensions: *optional, default (256, 256, 256)* The dimensions of the final image
+    :type dimensions: (int, int, int)
+    :param save_name: *optional, default "preprocessed"* The name of the location to save images to on disk and in the SQL database
+    :type save_name: str
+    :return: None
+    :rtype: NoneType
+    """
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("localdata.json") as json_file:
-        save_path = load(json_file).get("preprocessed")
+        save_path = load(json_file).get(save_name)
 
     try:
         rmtree(save_path)
@@ -181,9 +194,16 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
 
         data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
 
-    data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_name, con=sql_engine, if_exists="replace", index=False)
 
 def impute_unknown(sql_engine):
+    """
+    Impute unknown values from label data stored in a SQL table
+    :param sql_engine: The SQLAlchemy engine to use
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :return: None
+    :rtype: NoneType
+    """
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM raw_label", conn)
 
