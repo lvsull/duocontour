@@ -16,6 +16,7 @@ import SimpleITK as sitk
 import nibabel as nib
 from nilearn import datasets, image
 
+bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
 
 def save_and_get_view(arr, orig_image, save_path, name):
     corrected_image = nib.Nifti1Image(arr, orig_image.affine, orig_image.header)
@@ -39,7 +40,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
         pass
     mkdir(save_path)
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Padding Images"):
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Padding Images", bar_format=bf):
         orig_image = loads(image_tuple.image)
         fdata = orig_image.get_fdata(caching="unchanged")
         shape = fdata.shape
@@ -81,7 +82,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
         pass
     mkdir(save_path)
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Correcting Bias Fields"):
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Correcting Bias Fields", bar_format=bf):
         orig_image = loads(image_tuple.image)
         fdata = orig_image.get_fdata(caching="unchanged")
         image = sitk.GetImageFromArray(fdata)
@@ -120,7 +121,7 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
         pass
     mkdir(save_path)
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Normalizing Images"):
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Normalizing Images", bar_format=bf):
         orig_image = loads(image_tuple.image)
         fdata = orig_image.get_fdata(caching="unchanged")
         orig_shape = fdata.shape
@@ -167,7 +168,7 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
     mkdir(save_path)
 
     mni_template_orig = datasets.load_mni152_template()
-    mni_template_data = mni_template_orig.get_fdata()
+    mni_template_data = mni_template_orig.get_fdata().astype(np.int_)
     mni_shape = mni_template_data.shape
     x_diff = dimensions[0] - mni_shape[0]
     y_diff = dimensions[1] - mni_shape[1]
@@ -185,12 +186,13 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
 
     image_df = pd.DataFrame(columns=["name", "image"])
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Mapping to MNI Space"):
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Mapping to MNI Space", bar_format=bf):
         subject_image = loads(image_tuple.image)
         mapped_image = image.resample_to_img(subject_image, mni_template, force_resample=True, copy_header=True)
-        image_df.loc[len(image_df)] = [image_tuple.name, mapped_image.get_fdata()]
+        image_df.loc[len(image_df)] = [image_tuple.name, mapped_image.get_fdata().astype(np.int_)]
 
-        mapped_image_view = save_and_get_view(mapped_image.get_fdata(), mapped_image, save_path, image_tuple.name)
+        mapped_image_view = save_and_get_view(mapped_image.get_fdata().astype(np.int_),
+                                              mapped_image, save_path, image_tuple.name)
 
         data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
 
@@ -216,9 +218,9 @@ def impute_unknown(sql_engine):
         pass
     mkdir(save_path)
 
-    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values"):
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values", bar_format=bf):
         orig_image = loads(subject.image)
-        fdata = orig_image.get_fdata()
+        fdata = orig_image.get_fdata().astype(np.int_)
         for slc, row, col in np.argwhere((fdata == 29) | (fdata == 61)
                                          | (fdata == 78) | (fdata == 79) | (fdata == 80) | (fdata == 81) | (fdata == 82)
                                          | (fdata == 251) | (fdata == 252) | (fdata == 253)
