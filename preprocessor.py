@@ -243,3 +243,24 @@ def impute_unknown(sql_engine):
         data.loc[subject.Index, "image"] = dumps(imputed_label_view)
 
     data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
+
+def correct_class_labels(sql_engine):
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM imputed_label", conn)
+
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get("corrected_label")
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    labels = pd.read_csv("seg_values.csv")["SegID"]
+
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Values", bar_format=bf):
+        orig_image = loads(subject.image)
+        fdata = orig_image.get_fdata().astype(np.int_)
+        for slc, row, col in np.argwhere(fdata != 0):
+            fdata[slc][row][col] = labels[labels.isin([fdata[slc][row][col]])].index[0]
