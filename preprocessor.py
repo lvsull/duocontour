@@ -246,7 +246,14 @@ def impute_unknown(sql_engine):
 
     data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
 
-def correct_class_labels(sql_engine):
+def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine) -> None:
+    """
+    Corrects class labes to be continuous [0, 36]
+    :param sql_engine: The SQLAlchemy engine to use
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :return: None
+    :rtype: NoneType
+    """
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM imputed_label", conn)
 

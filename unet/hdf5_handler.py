@@ -9,6 +9,17 @@ import numpy as np
 
 
 def save_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path: str) -> None:
+    """
+    Saves images from a SQL table to HDF5 files as required by pytorch3dunet
+    :param sql_engine: The SQLAlchemy engine to use
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :param table: The name of the table to read from
+    :type table: str
+    :param save_path: The path to save HDF5 files to
+    :type save_path: str
+    :return: None
+    :rtype: NoneType
+    """
     data = pd.read_sql_query(f"SELECT * FROM {table}", sql_engine)
 
     try:
