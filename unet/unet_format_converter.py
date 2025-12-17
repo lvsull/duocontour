@@ -38,3 +38,29 @@ def save_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path
         with h5py.File(f"{save_path}/{data.loc[row, "name"]}.hdf5", 'w') as f:
             f.create_dataset("raw", data=raw)
             f.create_dataset("label", data=label)
+
+
+c_to_f = pd.read_csv("seg_values.csv")["SegID"].to_dict()
+f_to_c = {y: x for x, y in c_to_f.items()}
+
+
+def fs_to_cont(value: int) -> int:
+    """
+    Convert a label value in FreeSurfer format to continuous format
+    :param value: The FreeSurfer label value to convert
+    :type value: int
+    :return: ``value`` converted to continuous format
+    :rtype: int
+    """
+    return f_to_c[value]
+
+
+def cont_to_fs(value):
+    """
+    Convert a label value in continuous format to FreeSurfer format
+    :param value: The continuous label value to convert
+    :type value: int
+    :return: ``value`` converted to FreeSurfer format
+    :rtype: int
+    """
+    return c_to_f[value]
