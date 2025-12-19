@@ -1,22 +1,24 @@
 """
 10/4/25
 """
-import copy
 
-import pandas as pd
-from pickle import dumps, loads
-from time import time
-from os import path, mkdir
-from shutil import rmtree
 from json import load
-import sqlalchemy
-from tqdm import tqdm
-import numpy as np
+from os import mkdir, path
+from pickle import dumps, loads
+from shutil import rmtree
+
 import SimpleITK as sitk
 import nibabel as nib
-from nilearn import datasets, image
+import numpy as np
+import pandas as pd
+import sqlalchemy
+from nilearn import datasets
+from tqdm import tqdm
+
+from unet.unet_format_converter import fs_to_cont
 
 bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
+
 
 def save_and_get_view(arr, orig_image, save_path, name):
     corrected_image = nib.Nifti1Image(arr, orig_image.affine, orig_image.header)
@@ -27,12 +29,13 @@ def save_and_get_view(arr, orig_image, save_path, name):
     return nib.load(filepath)
 
 
-def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", dimensions=(256, 256, 256)) -> None:
+def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", save_table="padded",
+               dimensions=(256, 256, 256)) -> None:
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("localdata.json") as json_file:
-        save_path = load(json_file).get("padded")
+        save_path = load(json_file).get(save_table)
 
     try:
         rmtree(save_path)
@@ -55,10 +58,10 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", di
 
         data.loc[image_tuple.Index, "image"] = dumps(padded_image_view)
 
-    data.to_sql(name="padded", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
 
-def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "padded") -> None:
+def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "mni_registered") -> None:
     """
     Corrects bias fields of images stored on a SQL table
     :param sql_engine: The SLQLAlchemy engine to use
@@ -84,7 +87,7 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
 
     for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Correcting Bias Fields", bar_format=bf):
         orig_image = loads(image_tuple.image)
-        fdata = orig_image.get_fdata(caching="unchanged")
+        fdata = orig_image.get_fdata()
         image = sitk.GetImageFromArray(fdata)
         mask_image = sitk.OtsuThreshold(image, 0, 1, 200)
 
@@ -113,7 +116,7 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("localdata.json") as json_file:
-        save_path = load(json_file).get("normalized")
+        save_path = load(json_file).get("preprocessed")
 
     try:
         rmtree(save_path)
@@ -137,29 +140,25 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
 
         data.loc[image_tuple.Index, "image"] = dumps(norm_image_view)
 
-    data.to_sql(name="normalized", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
 
 
-def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normalized",
-               dimensions: tuple = (256, 256, 256), save_name: str = "preprocessed") -> None:
+def register_to_mni(sql_engine, read_name, save_name, dimensions=(256, 256, 256)):
     """
-    Map images from a SQL table to the MNI152 space
-    :param sql_engine: The SQLAlchemy engine to use
-    :type sql_engine: sqlalchemy.engine.base.Engine
-    :param table: *optional, default "normalized"* The SQL table to read images from
-    :type table: str
-    :param dimensions: *optional, default (256, 256, 256)* The dimensions of the final image
-    :type dimensions: (int, int, int)
-    :param save_name: *optional, default "preprocessed"* The name of the location to save images to on disk and in the SQL database
-    :type save_name: str
-    :return: None
-    :rtype: NoneType
+    Registers images to MNI space\n
+    Adapted from https://simpleitk.readthedocs.io/en/master/link_ImageRegistrationMethod1_docs.html#overview
+    :return:
+    :rtype:
     """
+
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_name}", conn)
 
     with open("localdata.json") as json_file:
-        save_path = load(json_file).get(save_name)
+        f = load(json_file)
+        read_path = f.get(read_name)
+        save_path = f.get(save_name)
+        mni_template_path = f.get("mni_template")
 
     try:
         rmtree(save_path)
@@ -168,7 +167,7 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
     mkdir(save_path)
 
     mni_template_orig = datasets.load_mni152_template()
-    mni_template_data = mni_template_orig.get_fdata().astype(np.int_)
+    mni_template_data = mni_template_orig.get_fdata()
     mni_shape = mni_template_data.shape
     x_diff = dimensions[0] - mni_shape[0]
     y_diff = dimensions[1] - mni_shape[1]
@@ -184,21 +183,54 @@ def map_to_mni(sql_engine: sqlalchemy.engine.base.Engine, table: str = "normaliz
                                                       [0, 0, 1] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
                                                       [0, 0, 0, 1]]))
 
-    image_df = pd.DataFrame(columns=["name", "image"])
+    nib.save(mni_template, mni_template_path)
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Mapping to MNI Space", bar_format=bf):
-        subject_image = loads(image_tuple.image)
-        mapped_image = image.resample_to_img(subject_image, mni_template, force_resample=True, copy_header=True)
-        image_df.loc[len(image_df)] = [image_tuple.name, mapped_image.get_fdata().astype(np.int_)]
+    fixed = sitk.ReadImage(mni_template_path, sitk.sitkFloat32)
 
-        mapped_image_view = save_and_get_view(mapped_image.get_fdata().astype(np.int_),
-                                              mapped_image, save_path, image_tuple.name)
+    R = sitk.ImageRegistrationMethod()
+    R.SetMetricAsMeanSquares()
+    R.SetOptimizerAsRegularStepGradientDescent(4.0, 0.01, 200)
+    R.SetInitialTransform(sitk.TranslationTransform(fixed.GetDimension()))
+    R.SetInterpolator(sitk.sitkLinear)
 
-        data.loc[image_tuple.Index, "image"] = dumps(mapped_image_view)
+    def command_iteration(method):
+        method.GetOptimizerIteration()
+        method.GetMetricValue()
+        method.GetOptimizerPosition()
+
+    R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
+
+    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Registering to MNI", bar_format=bf):
+        image_path = path.join(read_path, f"{image_tuple.name}.nii.gz")
+
+        moving = sitk.ReadImage(image_path, sitk.sitkFloat32)
+
+        outTx = R.Execute(fixed, moving)
+        outTx.SetOffset([np.round(x) for x in outTx.GetOffset()])
+
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetReferenceImage(fixed)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampler.SetDefaultPixelValue(0)
+        resampler.SetTransform(outTx)
+
+        out = resampler.Execute(moving)
+        simg2 = sitk.Cast(sitk.RescaleIntensity(out), sitk.sitkUInt8)
+
+        moved_img_arr = sitk.GetArrayFromImage(simg2)
+
+        img_save_path = path.join(save_path, f"{image_tuple.name}.nii.gz")
+
+        sitk.WriteImage(sitk.GetImageFromArray(moved_img_arr), img_save_path)
+
+        moved_image_view = nib.load(img_save_path)
+
+        data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
 
     data.to_sql(name=save_name, con=sql_engine, if_exists="replace", index=False)
 
-def impute_unknown(sql_engine):
+
+def impute_unknown(sql_engine, table="mni_registered_label"):
     """
     Impute unknown values from label data stored in a SQL table
     :param sql_engine: The SQLAlchemy engine to use
@@ -207,7 +239,7 @@ def impute_unknown(sql_engine):
     :rtype: NoneType
     """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM raw_label", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("localdata.json") as json_file:
         save_path = load(json_file).get("imputed_label")
@@ -220,7 +252,7 @@ def impute_unknown(sql_engine):
 
     for subject in tqdm(data.itertuples(), total=len(data), desc="Imputing Unknown Labels", bar_format=bf):
         orig_image = loads(subject.image)
-        fdata = orig_image.get_fdata().astype(np.int_)
+        fdata = np.round(orig_image.get_fdata())
         for slc, row, col in np.argwhere((fdata == 29) | (fdata == 61)
                                          | (fdata == 78) | (fdata == 79) | (fdata == 80) | (fdata == 81) | (fdata == 82)
                                          | (fdata == 251) | (fdata == 252) | (fdata == 253)
@@ -234,19 +266,19 @@ def impute_unknown(sql_engine):
                             if not (x == 0 and y == 0) and not (val == 29 or val == 61):
                                 values.append(val)
                     fdata[slc][row][col] = max(values, key=values.count)
-                    break
+
                 case 78 | 79 | 80 | 81 | 82:  # hypointensities
                     fdata[slc][row][col] = 77
-                    break
+
                 case 251 | 252 | 253 | 254 | 255:  # corpus callosum segmentation, should not exist
-                    raise ValueError("CC value encountered")
+                    fdata[slc][row][col] = 0
 
         imputed_label_view = save_and_get_view(fdata, orig_image, save_path, subject.name)
         data.loc[subject.Index, "image"] = dumps(imputed_label_view)
 
     data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
 
-def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine) -> None:
+def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imputed_label") -> None:
     """
     Corrects class labes to be continuous [0, 36]
     :param sql_engine: The SQLAlchemy engine to use
@@ -255,10 +287,10 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine) -> None:
     :rtype: NoneType
     """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM imputed_label", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("localdata.json") as json_file:
-        save_path = load(json_file).get("corrected_label")
+        save_path = load(json_file).get("label")
 
     try:
         rmtree(save_path)
@@ -266,10 +298,13 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine) -> None:
         pass
     mkdir(save_path)
 
-    labels = pd.read_csv("seg_values.csv")["SegID"]
-
     for subject in tqdm(data.itertuples(), total=len(data), desc="Correcting Label Values", bar_format=bf):
         orig_image = loads(subject.image)
-        fdata = orig_image.get_fdata().astype(np.int_)
+        fdata = np.round(orig_image.get_fdata())
         for slc, row, col in np.argwhere(fdata != 0):
-            fdata[slc][row][col] = labels[labels.isin([fdata[slc][row][col]])].index[0]
+            fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
+
+        corrected_label_view = save_and_get_view(fdata, orig_image, save_path, subject.name)
+        data.loc[subject.Index, "image"] = dumps(corrected_label_view)
+
+    data.to_sql(name="label", con=sql_engine, if_exists="replace", index=False)
