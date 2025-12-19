@@ -8,6 +8,8 @@ import sqlalchemy
 import numpy as np
 
 
+bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
+
 def save_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path: str) -> None:
     """
     Saves images from a SQL table to HDF5 files as required by pytorch3dunet
@@ -28,9 +30,9 @@ def save_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path
         pass
     mkdir(save_path)
 
-    for row in tqdm(range(len(data)), desc="Saving images to HDF5"):
-        raw = pickle.loads(data.loc[row, "image"]).get_fdata().astype(np.int_)
-        label = pickle.loads(data.loc[row, "label"]).get_fdata().astype(np.int_)
+    for row in tqdm(range(len(data)), desc=f"Saving {table} to HDF5", bar_format=bf):
+        raw = pickle.loads(data.loc[row, "image"]).get_fdata()
+        label = pickle.loads(data.loc[row, "label"]).get_fdata()
 
         if not raw.shape == label.shape:
             raise Exception(f"Image shape {raw.shape} does not match label shape {label.shape}.")
@@ -52,7 +54,7 @@ def fs_to_cont(value: int) -> int:
     :return: ``value`` converted to continuous format
     :rtype: int
     """
-    return f_to_c[value]
+    return f_to_c[int(value)]
 
 
 def cont_to_fs(value):
@@ -63,4 +65,4 @@ def cont_to_fs(value):
     :return: ``value`` converted to FreeSurfer format
     :rtype: int
     """
-    return c_to_f[value]
+    return c_to_f[int(value)]
