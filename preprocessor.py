@@ -29,6 +29,16 @@ def save_and_get_view(arr, orig_image, save_path, name):
     return nib.load(filepath)
 
 
+def center_pad(arr, dimensions=(256, 256, 256)):
+    x_diff = dimensions[0] - arr.shape[0]
+    y_diff = dimensions[1] - arr.shape[1]
+    z_diff = dimensions[2] - arr.shape[2]
+    return np.pad(arr, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
+                        (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
+                        (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))),
+                  mode="constant", constant_values=0)
+
+
 def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", save_table="padded",
                dimensions=(256, 256, 256)) -> None:
     with sql_engine.connect() as conn:
@@ -50,9 +60,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
         x_diff = dimensions[0] - shape[0]
         y_diff = dimensions[1] - shape[1]
         z_diff = dimensions[2] - shape[2]
-        padded_arr = np.pad(fdata, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
-                                    (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
-                                    (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))))
+        padded_arr = center_pad(fdata, dimensions)
 
         padded_image_view = save_and_get_view(padded_arr, orig_image, save_path, image_tuple.name)
 
@@ -143,7 +151,27 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
 
 
-def register_to_mni(sql_engine, read_name, save_name, dimensions=(256, 256, 256)):
+def load_mni_template(save_path):
+    dimensions = (256, 256, 256)
+    mni_template_orig = datasets.load_mni152_template()
+    mni_template_data = mni_template_orig.get_fdata()
+    mni_shape = mni_template_data.shape
+    x_diff = dimensions[0] - mni_shape[0]
+    y_diff = dimensions[1] - mni_shape[1]
+    z_diff = dimensions[2] - mni_shape[2]
+    padded_mni_template_data = center_pad(mni_template_data, dimensions)
+    orig_affine = mni_template_orig.affine
+    mni_template = nib.Nifti1Image(padded_mni_template_data,
+                                   affine=np.asarray([[1, 0, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 1, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 0, 1] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 0, 0, 1]]))
+
+    nib.save(mni_template, save_path)
+
+    return nib.load(save_path)
+
+def register_to_mni(sql_engine, read_name, save_name):
     """
     Registers images to MNI space\n
     Adapted from https://simpleitk.readthedocs.io/en/master/link_ImageRegistrationMethod1_docs.html#overview
@@ -166,24 +194,7 @@ def register_to_mni(sql_engine, read_name, save_name, dimensions=(256, 256, 256)
         pass
     mkdir(save_path)
 
-    mni_template_orig = datasets.load_mni152_template()
-    mni_template_data = mni_template_orig.get_fdata()
-    mni_shape = mni_template_data.shape
-    x_diff = dimensions[0] - mni_shape[0]
-    y_diff = dimensions[1] - mni_shape[1]
-    z_diff = dimensions[2] - mni_shape[2]
-    padded_mni_template_data = np.pad(mni_template_data, ((int(np.floor(x_diff / 2)), int(np.ceil(x_diff / 2))),
-                                                          (int((np.floor(y_diff / 2))), int(np.ceil(y_diff / 2))),
-                                                          (int((np.floor(z_diff / 2))), int(np.ceil(z_diff / 2)))),
-                                      mode="constant", constant_values=0)
-    orig_affine = mni_template_orig.affine
-    mni_template = nib.Nifti1Image(padded_mni_template_data,
-                                   affine=np.asarray([[1, 0, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
-                                                      [0, 1, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
-                                                      [0, 0, 1] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
-                                                      [0, 0, 0, 1]]))
-
-    nib.save(mni_template, mni_template_path)
+    load_mni_template(mni_template_path)
 
     fixed = sitk.ReadImage(mni_template_path, sitk.sitkFloat32)
 
@@ -215,9 +226,8 @@ def register_to_mni(sql_engine, read_name, save_name, dimensions=(256, 256, 256)
         resampler.SetTransform(outTx)
 
         out = resampler.Execute(moving)
-        simg2 = sitk.Cast(sitk.RescaleIntensity(out), sitk.sitkUInt8)
 
-        moved_img_arr = sitk.GetArrayFromImage(simg2)
+        moved_img_arr = sitk.GetArrayFromImage(out)
 
         img_save_path = path.join(save_path, f"{image_tuple.name}.nii.gz")
 
