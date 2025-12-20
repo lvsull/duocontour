@@ -5,12 +5,16 @@
 import json
 import time
 
+import pandas as pd
 import torch
+from pytorch3dunet.train import main as train_unet
+from sklearn.model_selection import train_test_split
 from sqlalchemy import create_engine
 
-from dataloader import load_data
-from preprocessor import correct_bias_fields, map_to_mni, normalize, pad_images
-from unet.hdf5_handler import save_train
+from dataloader import load_images
+from preprocessor import correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
+    register_to_mni
+from unet.unet_format_converter import save_images
 
 if __name__ == "__main__":
     start_time = time.time()
@@ -21,20 +25,56 @@ if __name__ == "__main__":
         device = torch.device("cpu")
         print("Using device: CPU")
 
+    device = torch.device("cpu")
+    print("Using device: CPU")
+
     with open("localdata.json") as json_file:
         open_file = json.load(json_file)
         database_location = open_file.get("database")
         train_config_file = open_file.get("train_config")
+        train_path = open_file.get("train")
+        validation_path = open_file.get("validation")
 
     engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    load_data(engine)
-    pad_images(engine)
+    print("\nLoading Images...")
+
+    load_images(engine, "brainmask", "raw")
+    load_images(engine, "aseg", "raw_label")
+
+    print("\nPreprocessing Images...")
+
+    pad_images(engine, "raw", "padded")
+    pad_images(engine, "raw_label", "padded_label")
+    register_to_mni(engine, "padded", "padded_label", "mni_registered", "mni_registered_label")
     correct_bias_fields(engine)
     normalize(engine)
-    map_to_mni(engine)
+    impute_unknown(engine)
+    correct_class_labels(engine)
 
-    save_train(engine)
+    print("\nSaving Images to HDF5...")
+
+    with engine.connect() as conn:
+        images = pd.read_sql_query("SELECT * FROM preprocessed", conn)
+        labels = pd.read_sql_query("SELECT * FROM label", conn)
+
+    images.sort_values(by=["name"], inplace=True, ignore_index=True)
+    labels.sort_values(by=["name"], inplace=True, ignore_index=True)
+
+    data = images.copy().reset_index(drop=True)
+    data["label"] = labels["image"]
+
+    train, val = train_test_split(data, test_size=0.15)
+
+    train.to_sql(name="train", con=engine, if_exists="replace", index=False)
+    val.to_sql(name="validation", con=engine, if_exists="replace", index=False)
+
+    save_images(engine, "train", train_path)
+    save_images(engine, "validation", validation_path)
+
+    print("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
+    print("\nTraining model...")
 
     train_unet(train_config_file)
 
