@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 from unet.unet_format_converter import fs_to_cont
 
-bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
+bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
 
 def save_and_get_view(arr, orig_image, save_path, name):
@@ -53,13 +53,11 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
         pass
     mkdir(save_path)
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Padding Images", bar_format=bf):
+    for image_tuple in tqdm(data.itertuples(), total=len(data),
+                            desc=f"Padding {"Images" if table == "raw" else "Labels"}",
+                            bar_format=bf):
         orig_image = loads(image_tuple.image)
-        fdata = orig_image.get_fdata(caching="unchanged")
-        shape = fdata.shape
-        x_diff = dimensions[0] - shape[0]
-        y_diff = dimensions[1] - shape[1]
-        z_diff = dimensions[2] - shape[2]
+        fdata = orig_image.get_fdata()
         padded_arr = center_pad(fdata, dimensions)
 
         padded_image_view = save_and_get_view(padded_arr, orig_image, save_path, image_tuple.name)
@@ -171,7 +169,7 @@ def load_mni_template(save_path):
 
     return nib.load(save_path)
 
-def register_to_mni(sql_engine, read_name, save_name):
+def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
     """
     Registers images to MNI space\n
     Adapted from https://simpleitk.readthedocs.io/en/master/link_ImageRegistrationMethod1_docs.html#overview
@@ -180,19 +178,22 @@ def register_to_mni(sql_engine, read_name, save_name):
     """
 
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {read_name}", conn)
+        image_data = pd.read_sql_query(f"SELECT * FROM {read_img}", conn)
+        label_data = pd.read_sql_query(f"SELECT * FROM {read_lbl}", conn)
 
     with open("localdata.json") as json_file:
         f = load(json_file)
-        read_path = f.get(read_name)
-        save_path = f.get(save_name)
+        image_read_path = f.get(read_img)
+        label_read_path = f.get(read_lbl)
+        image_save_path = f.get(save_img)
+        label_save_path = f.get(save_lbl)
         mni_template_path = f.get("mni_template")
 
     try:
-        rmtree(save_path)
+        rmtree(image_save_path)
     except FileNotFoundError:
         pass
-    mkdir(save_path)
+    mkdir(image_save_path)
 
     load_mni_template(mni_template_path)
 
@@ -211,10 +212,12 @@ def register_to_mni(sql_engine, read_name, save_name):
 
     R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
 
-    for image_tuple in tqdm(data.itertuples(), total=len(data), desc="Registering to MNI", bar_format=bf):
-        image_path = path.join(read_path, f"{image_tuple.name}.nii.gz")
+    for image_tuple in tqdm(image_data.itertuples(), total=len(image_data), desc="Registering to MNI", bar_format=bf):
+        image_path = path.join(image_read_path, f"{image_tuple.name}.nii.gz")
+        label_path = path.join(label_read_path, f"{image_tuple.name}.nii.gz")
 
         moving = sitk.ReadImage(image_path, sitk.sitkFloat32)
+        label = sitk.ReadImage(label_path, sitk.sitkFloat32)
 
         outTx = R.Execute(fixed, moving)
         outTx.SetOffset([np.round(x) for x in outTx.GetOffset()])
@@ -225,19 +228,26 @@ def register_to_mni(sql_engine, read_name, save_name):
         resampler.SetDefaultPixelValue(0)
         resampler.SetTransform(outTx)
 
-        out = resampler.Execute(moving)
+        out_img = resampler.Execute(moving)
+        out_lbl = resampler.Execute(label)
 
-        moved_img_arr = sitk.GetArrayFromImage(out)
+        moved_img_arr = sitk.GetArrayFromImage(out_img)
+        moved_lbl_arr = sitk.GetArrayFromImage(out_lbl)
 
-        img_save_path = path.join(save_path, f"{image_tuple.name}.nii.gz")
+        img_save_file = path.join(image_save_path, f"{image_tuple.name}.nii.gz")
+        lbl_save_file = path.join(label_save_path, f"{image_tuple.name}.nii.gz")
 
-        sitk.WriteImage(sitk.GetImageFromArray(moved_img_arr), img_save_path)
+        sitk.WriteImage(sitk.GetImageFromArray(moved_img_arr), img_save_file)
+        sitk.WriteImage(sitk.GetImageFromArray(moved_lbl_arr), lbl_save_file)
 
-        moved_image_view = nib.load(img_save_path)
+        moved_image_view = nib.load(img_save_file)
+        moved_label_view = nib.load(lbl_save_file)
 
-        data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
+        image_data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
+        label_data.loc[image_tuple.Index, "image"] = dumps(moved_label_view)
 
-    data.to_sql(name=save_name, con=sql_engine, if_exists="replace", index=False)
+    image_data.to_sql(name=save_img, con=sql_engine, if_exists="replace", index=False)
+    label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
 
 
 def impute_unknown(sql_engine, table="mni_registered_label"):
