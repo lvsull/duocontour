@@ -14,7 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 import sqlalchemy
 
-bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
+bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
 def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str = "brainmask", save_table: str = "raw") -> None:
     """
@@ -36,7 +36,9 @@ def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str = "brainmask
 
         data_path = os.path.join(data_path, "data")
 
-        for folder in tqdm(os.listdir(data_path), desc="Loading " + dataset_name, bar_format=bf):
+        for folder in tqdm(os.listdir(data_path),
+                           desc=f"Loading {dataset_name} {"Images" if filename == "brainmask" else "Labels"}",
+                           bar_format=bf):
             patient_dir = os.path.join(data_path, folder)
             if os.path.isdir(patient_dir):
                 img = nib.load(os.path.join(patient_dir, f"mri/{filename}.mgz"))
