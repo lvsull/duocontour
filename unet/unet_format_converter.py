@@ -8,7 +8,7 @@ import sqlalchemy
 import numpy as np
 
 
-bf = "{desc:<25}{percentage:3.0f}%|{bar:20}{r_bar}"
+bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
 def save_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path: str) -> None:
     """
@@ -54,7 +54,10 @@ def fs_to_cont(value: int) -> int:
     :return: ``value`` converted to continuous format
     :rtype: int
     """
-    return f_to_c[int(value)]
+    try:
+        return f_to_c[int(value)]
+    except KeyError:
+        return 0
 
 
 def cont_to_fs(value):
@@ -65,4 +68,7 @@ def cont_to_fs(value):
     :return: ``value`` converted to FreeSurfer format
     :rtype: int
     """
-    return c_to_f[int(value)]
+    try:
+        return c_to_f[int(value)]
+    except KeyError:
+        return 0
