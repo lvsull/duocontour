@@ -39,6 +39,49 @@ def center_pad(arr, dimensions=(256, 256, 256)):
                   mode="constant", constant_values=0)
 
 
+def scale_pad_label(sql_engine, table="raw_label", save_table="padded_label"):
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+
+    with open("localdata.json") as json_file:
+        save_path = load(json_file).get(save_table)
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    for subject in tqdm(data.itertuples(), total=len(data), desc="Scaling and Padding Labels", bar_format=bf):
+        image = loads(subject.image)
+        z_delta = image.header["delta"][2] - 1
+        if z_delta != 0:
+            z_scale = np.round(1 / z_delta)
+            orig_fdata = image.get_fdata()
+            fdata = []
+            for x in range(len(orig_fdata)):
+                plane = []
+                for y in range(len(orig_fdata[x])):
+                    row = []
+                    for z in range(len(orig_fdata[x][y])):
+                        row.extend([orig_fdata[x][y][z]] * (2 if z % z_scale == 0 else 1))
+                    plane.append(row)
+                fdata.append(plane)
+            fdata = np.array(fdata)
+        else:
+            fdata = image.get_fdata()
+        padded_arr = center_pad(fdata, (256, 256, 256))
+
+        corrected_image = nib.Nifti1Image(padded_arr, AFFINE)
+
+        filepath = path.join(save_path, f"{subject.name}.nii.gz")
+        nib.save(corrected_image, filepath)
+
+        data.loc[subject.Index, "image"] = dumps(nib.load(filepath))
+
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
+
+
 def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", save_table="padded",
                dimensions=(256, 256, 256)) -> None:
     with sql_engine.connect() as conn:
