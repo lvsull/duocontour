@@ -19,9 +19,14 @@ from unet.unet_format_converter import fs_to_cont
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
+AFFINE = np.array([[-1, 0, 0, 128],
+                   [0, 0, 1, -128],
+                   [0, -1, 0, 128],
+                   [0, 0, 0, 1]])
+
 
 def save_and_get_view(arr, orig_image, save_path, name):
-    corrected_image = nib.Nifti1Image(arr, orig_image.affine, orig_image.header)
+    corrected_image = nib.Nifti1Image(arr, AFFINE, orig_image.header)
 
     filepath = path.join(save_path, f"{name}.nii.gz")
     nib.save(corrected_image, filepath)
@@ -255,6 +260,11 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
 
     R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
 
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(fixed)
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetDefaultPixelValue(0)
+
     for image_tuple in tqdm(image_data.itertuples(), total=len(image_data), desc="Registering to MNI", bar_format=bf):
         image_path = path.join(image_read_path, f"{image_tuple.name}.nii.gz")
         label_path = path.join(label_read_path, f"{image_tuple.name}.nii.gz")
@@ -264,30 +274,27 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
 
         outTx = R.Execute(fixed, moving)
         outTx.SetOffset([np.round(x) for x in outTx.GetOffset()])
+        outTx.SetOffset([256 - x if x > 128 else x for x in outTx.GetOffset()])
 
-        resampler = sitk.ResampleImageFilter()
-        resampler.SetReferenceImage(fixed)
-        resampler.SetInterpolator(sitk.sitkLinear)
-        resampler.SetDefaultPixelValue(0)
         resampler.SetTransform(outTx)
 
         out_img = resampler.Execute(moving)
         out_lbl = resampler.Execute(label)
 
-        moved_img_arr = sitk.GetArrayFromImage(out_img)
-        moved_lbl_arr = sitk.GetArrayFromImage(out_lbl)
-
         img_save_file = path.join(image_save_path, f"{image_tuple.name}.nii.gz")
         lbl_save_file = path.join(label_save_path, f"{image_tuple.name}.nii.gz")
 
-        sitk.WriteImage(sitk.GetImageFromArray(moved_img_arr), img_save_file)
-        sitk.WriteImage(sitk.GetImageFromArray(moved_lbl_arr), lbl_save_file)
+        sitk.WriteImage(out_img, img_save_file)
+        sitk.WriteImage(out_lbl, lbl_save_file)
 
         moved_image_view = nib.load(img_save_file)
         moved_label_view = nib.load(lbl_save_file)
 
         image_data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
         label_data.loc[image_tuple.Index, "image"] = dumps(moved_label_view)
+
+        if len(np.nonzero(moved_image_view.get_fdata())[0]) == 0:
+            print()
 
     image_data.to_sql(name=save_img, con=sql_engine, if_exists="replace", index=False)
     label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
