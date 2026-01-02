@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 
 from dataloader import load_images
 from preprocessor import correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
-    register_to_mni
+    register_to_mni, scale_pad_label
 from unet.unet_format_converter import save_images
 
 if __name__ == "__main__":
@@ -27,9 +27,8 @@ if __name__ == "__main__":
 
     device = torch.device("cpu")
     print("Using device: CPU")
-
-    with open("localdata.json") as json_file:
-        open_file = json.load(json_file)
+    with open("localdata.json", "r") as f:
+        open_file = json.load(f)
         database_location = open_file.get("database")
         train_config_file = open_file.get("train_config")
         train_path = open_file.get("train")
@@ -45,7 +44,7 @@ if __name__ == "__main__":
     print("\nPreprocessing Images...")
 
     pad_images(engine, "raw", "padded")
-    pad_images(engine, "raw_label", "padded_label")
+    scale_pad_label(engine, "raw_label", "padded_label")
     register_to_mni(engine, "padded", "padded_label", "mni_registered", "mni_registered_label")
     correct_bias_fields(engine)
     normalize(engine)
@@ -72,7 +71,7 @@ if __name__ == "__main__":
     save_images(engine, "train", train_path)
     save_images(engine, "validation", validation_path)
 
-    print("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    print("\nFinished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
     print("\nTraining model...")
 
