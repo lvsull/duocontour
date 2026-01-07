@@ -12,8 +12,8 @@ from preprocessor import load_mni_template, center_pad
 
 
 def load_atlas(atlas_path):
-    with open("localdata.json") as json_file:
-        mni_path = json.load(json_file).get("mni_template")
+    with open("config.yaml") as config_file:
+        mni_path = json.load(config_file).get("mni_template")
 
     dimensions = (256, 256, 256)
     atlas = nib.load(atlas_path)
@@ -77,3 +77,12 @@ def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dic
         struct_dscs[struct] = (2 * int_card) / (image_card + atlas_card)
 
     return struct_dscs
+
+
+if __name__ == "__main__":
+    atlas_data = nib.load(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
+    # atlas_data = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
+    image_data = nib.load(r"D:\Liam Sullivan LTS\label\OAS1_0075_MR1.nii.gz").get_fdata()
+    structs = list(range(len(pd.read_csv("seg_values.csv").index)))
+    dscs = compare_to_atlas(image_data, atlas_data, structs)
+    print(dscs)

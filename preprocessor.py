@@ -2,7 +2,7 @@
 10/4/25
 """
 
-from json import load
+from yaml import safe_load
 from os import mkdir, path
 from pickle import dumps, loads
 from shutil import rmtree
@@ -48,8 +48,8 @@ def scale_pad_label(sql_engine, table="raw_label", save_table="padded_label"):
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get(save_table)
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get(save_table)
 
     try:
         rmtree(save_path)
@@ -92,8 +92,8 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get(save_table)
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get(save_table)
 
     try:
         rmtree(save_path)
@@ -130,8 +130,8 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
 
     corrector = sitk.N4BiasFieldCorrectionImageFilter()
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get("bias_corrected")
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get("bias_corrected")
 
     try:
         rmtree(save_path)
@@ -169,8 +169,8 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get("preprocessed")
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get("preprocessed")
 
     try:
         rmtree(save_path)
@@ -229,8 +229,8 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
         image_data = pd.read_sql_query(f"SELECT * FROM {read_img}", conn)
         label_data = pd.read_sql_query(f"SELECT * FROM {read_lbl}", conn)
 
-    with open("localdata.json") as json_file:
-        f = load(json_file)
+    with open("config.yaml") as yaml_file:
+        f = safe_load(yaml_file)
         image_read_path = f.get(read_img)
         label_read_path = f.get(read_lbl)
         image_save_path = f.get(save_img)
@@ -242,6 +242,11 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
     except FileNotFoundError:
         pass
     mkdir(image_save_path)
+    try:
+        rmtree(label_save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(label_save_path)
 
     load_mni_template(mni_template_path)
 
@@ -311,8 +316,8 @@ def impute_unknown(sql_engine, table="mni_registered_label"):
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get("imputed_label")
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get("imputed_label")
 
     try:
         rmtree(save_path)
@@ -359,8 +364,8 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imput
     with sql_engine.connect() as conn:
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
-    with open("localdata.json") as json_file:
-        save_path = load(json_file).get("label")
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file).get("label")
 
     try:
         rmtree(save_path)

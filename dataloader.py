@@ -3,7 +3,7 @@
 Provides tools to load data from an external file source
 """
 
-import json
+from yaml import safe_load
 import os
 import pickle
 from time import time
@@ -18,7 +18,7 @@ bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
 def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str = "brainmask", save_table: str = "raw") -> None:
     """
-    Loads all image data into a DataFrame from the location specified in localdata.json
+    Loads all image data into a DataFrame from the location specified in config.yaml
     :param sql_engine: SQLAlchemy engine object for the database file
     :type sql_engine: sqlalchemy.engine.Engine
     :param filename: *optional, default "brain"* The file name of the OASIS data file, in .mgz format
@@ -31,8 +31,8 @@ def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str = "brainmask
     images = pd.DataFrame(columns=["name", "image"])
 
     for dataset_name in ("OASIS", "CANDI"):
-        with (open("localdata.json", 'r')) as json_file:
-            data_path = os.path.join(json.load(json_file).get("raw"), dataset_name)
+        with (open("config.yaml", 'r')) as config_file:
+            data_path = os.path.join(safe_load(config_file).get("raw"), dataset_name)
 
         data_path = os.path.join(data_path, "data")
 

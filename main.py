@@ -2,7 +2,7 @@
 11/4/25
 """
 
-import json
+import yaml
 import time
 
 import pandas as pd
@@ -25,10 +25,10 @@ if __name__ == "__main__":
         device = torch.device("cpu")
         print("Using device: CPU")
 
-    device = torch.device("cpu")
-    print("Using device: CPU")
-    with open("localdata.json", "r") as f:
-        open_file = json.load(f)
+    # device = torch.device("cpu")
+    # print("Using device: CPU")
+    with open("config.yaml", "r") as f:
+        open_file = yaml.safe_load(f)
         database_location = open_file.get("database")
         train_config_file = open_file.get("train_config")
         train_path = open_file.get("train")
