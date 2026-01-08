@@ -16,7 +16,8 @@ from preprocessor import correct_bias_fields, correct_class_labels, impute_unkno
     register_to_mni, scale_pad_label
 from unet.unet_format_converter import save_images
 
-if __name__ == "__main__":
+
+def main():
     start_time = time.time()
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -25,35 +26,57 @@ if __name__ == "__main__":
         device = torch.device("cpu")
         print("Using device: CPU")
 
-    # device = torch.device("cpu")
-    # print("Using device: CPU")
+    with open("config.yaml", "r") as f:
+        database_location = yaml.safe_load(f).get("database")
+
+    sql_engine = create_engine(f'sqlite:///{database_location}', echo=False)
+
+    load_all(sql_engine)
+    preprocess(sql_engine)
+    save_to_hdf5(sql_engine)
+    train_model()
+
+    print("Finished in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
+
+def load_all(sql_engine):
+    start_time = time.time()
+
+    print("\nLoading Images...")
+
+    load_images(sql_engine, "brainmask", "raw")
+    load_images(sql_engine, "aseg", "raw_label")
+
+    print("Finished loading in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
+
+def preprocess(sql_engine):
+    start_time = time.time()
+
+    print("\nPreprocessing Images...")
+
+    pad_images(sql_engine, "raw", "padded")
+    scale_pad_label(sql_engine, "raw_label", "padded_label")
+    register_to_mni(sql_engine, "padded", "padded_label", "mni_registered", "mni_registered_label")
+    correct_bias_fields(sql_engine)
+    normalize(sql_engine)
+    impute_unknown(sql_engine)
+    correct_class_labels(sql_engine)
+
+    print("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
+def save_to_hdf5(sql_engine):
+    start_time = time.time()
+
+    print("\nSaving Images to HDF5...")
+
     with open("config.yaml", "r") as f:
         open_file = yaml.safe_load(f)
-        database_location = open_file.get("database")
         train_config_file = open_file.get("train_config")
         train_path = open_file.get("train")
         validation_path = open_file.get("validation")
 
-    engine = create_engine(f'sqlite:///{database_location}', echo=False)
-
-    print("\nLoading Images...")
-
-    load_images(engine, "brainmask", "raw")
-    load_images(engine, "aseg", "raw_label")
-
-    print("\nPreprocessing Images...")
-
-    pad_images(engine, "raw", "padded")
-    scale_pad_label(engine, "raw_label", "padded_label")
-    register_to_mni(engine, "padded", "padded_label", "mni_registered", "mni_registered_label")
-    correct_bias_fields(engine)
-    normalize(engine)
-    impute_unknown(engine)
-    correct_class_labels(engine)
-
-    print("\nSaving Images to HDF5...")
-
-    with engine.connect() as conn:
+    with sql_engine.connect() as conn:
         images = pd.read_sql_query("SELECT * FROM preprocessed", conn)
         labels = pd.read_sql_query("SELECT * FROM label", conn)
 
@@ -65,16 +88,26 @@ if __name__ == "__main__":
 
     train, val = train_test_split(data, test_size=0.15)
 
-    train.to_sql(name="train", con=engine, if_exists="replace", index=False)
-    val.to_sql(name="validation", con=engine, if_exists="replace", index=False)
+    train.to_sql(name="train", con=sql_engine, if_exists="replace", index=False)
+    val.to_sql(name="validation", con=sql_engine, if_exists="replace", index=False)
 
-    save_images(engine, "train", train_path)
-    save_images(engine, "validation", validation_path)
+    save_images(sql_engine, "train", train_path)
+    save_images(sql_engine, "validation", validation_path)
 
-    print("\nFinished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    print("Finished saving to HDF5 in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
-    print("\nTraining model...")
+def train_model():
+    start_time = time.time()
+
+    print("\nTraining Model...")
+
+    with open("config.yaml", "r") as f:
+        open_file = yaml.safe_load(f)
+        train_config_file = open_file.get("train_config")
 
     train_unet(train_config_file)
 
-    print("Finished in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    print("Finished training in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+
+if __name__ == "__main__":
+    main()
