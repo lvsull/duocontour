@@ -25,7 +25,18 @@ AFFINE = np.array([[-1, 0, 0, 128],
                    [0, 0, 0, 1]])
 
 
-def save_and_get_view(arr, orig_image, save_path, name):
+def save_and_get_view(arr: np.ndarray, orig_image, save_path: str, name: str):
+    """
+    Saves an array as a nibabel.Nifti1Image and returns a view
+    Args:
+        arr ():
+        orig_image ():
+        save_path ():
+        name ():
+
+    Returns:
+
+    """
     corrected_image = nib.Nifti1Image(arr, AFFINE, orig_image.header)
 
     filepath = path.join(save_path, f"{name}.nii.gz")
@@ -49,7 +60,7 @@ def scale_pad_label(sql_engine, table="raw_label", save_table="padded_label"):
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get(save_table)
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
@@ -93,7 +104,7 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get(save_table)
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
@@ -115,23 +126,24 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
     data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
 
-def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = "mni_registered") -> None:
+def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine,
+                        read_table: str = "mni_registered", save_table ="bias_corrected") -> None:
     """
     Corrects bias fields of images stored on a SQL table
     :param sql_engine: The SLQLAlchemy engine to use
     :type sql_engine: sqlalchemy.engine.base.Engine
-    :param table: *optional, default "raw"* The name of the table to use
-    :type table: str
+    :param read_table: *optional, default "raw"* The name of the table to use
+    :type read_table: str
     :return: None
     :rtype: NoneType
     """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     corrector = sitk.N4BiasFieldCorrectionImageFilter()
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get("bias_corrected")
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
@@ -155,7 +167,8 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine, table: str = 
     data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
 
 
-def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corrected") -> None:
+def normalize(sql_engine: sqlalchemy.engine.base.Engine,
+              table: str = "bias_corrected", save_table: str = "preprocessed") -> None:
     """
     Normalizes all data from a SQL table using the selected engine
     :param sql_engine: The SQLAlchemy engine to use
@@ -170,7 +183,7 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine, table: str = "bias_corr
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get("preprocessed")
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
@@ -231,11 +244,11 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
 
     with open("config.yaml") as yaml_file:
         f = safe_load(yaml_file)
-        image_read_path = f.get(read_img)
-        label_read_path = f.get(read_lbl)
-        image_save_path = f.get(save_img)
-        label_save_path = f.get(save_lbl)
-        mni_template_path = f.get("mni_template")
+        image_read_path = f[read_img]
+        label_read_path = f[read_lbl]
+        image_save_path = f[save_img]
+        label_save_path = f[save_lbl]
+        mni_template_path = f["mni_template"]
 
     try:
         rmtree(image_save_path)
@@ -298,9 +311,6 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
         image_data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
         label_data.loc[image_tuple.Index, "image"] = dumps(moved_label_view)
 
-        if len(np.nonzero(moved_image_view.get_fdata())[0]) == 0:
-            print()
-
     image_data.to_sql(name=save_img, con=sql_engine, if_exists="replace", index=False)
     label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
 
@@ -317,7 +327,7 @@ def impute_unknown(sql_engine, table="mni_registered_label"):
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get("imputed_label")
+        save_path = safe_load(yaml_file)["imputed_label"]
 
     try:
         rmtree(save_path)
@@ -353,7 +363,7 @@ def impute_unknown(sql_engine, table="mni_registered_label"):
 
     data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
 
-def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imputed_label") -> None:
+def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imputed_label", save_table="preprocessed_label") -> None:
     """
     Corrects class labes to be continuous [0, 36]
     :param sql_engine: The SQLAlchemy engine to use
@@ -365,7 +375,7 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imput
         data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file).get("label")
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
