@@ -21,20 +21,20 @@ model:
 # trainer configuration
 trainer:
   # path to the checkpoint directory
-  checkpoint_dir: unet/checkpoints
+  checkpoint_dir: D:\Liam Sullivan LTS\unet\checkpoints
   # path to the latest checkpoint; if provided the training will be resumed from that checkpoint
   resume: null
   # path to the best_checkpoint.pytorch; to be used for fine-tuning the model with additional ground truth
   # make sure to decrease the learning rate in the optimizer config accordingly
   pre_trained: null
   # how many iterations between validations
-  validate_after_iters: 1000
+  validate_after_iters: 500
   # how many iterations between tensorboard logging
-  log_after_iters: 500
+  log_after_iters: 250
   # max number of epochs
   max_num_epochs: 200
   # max number of iterations
-  max_num_iterations: 60000
+  max_num_iterations: 6000
   # model with higher eval score is considered better
   eval_score_higher_is_better: True
 # loss function configuration
@@ -65,17 +65,17 @@ lr_scheduler:
 # data loaders configuration
 loaders:
   # dataset class, currently StandardHDF5Dataset and LazyHDF5Dataset are supported
-  dataset: StandardHDF5Dataset
+  dataset: LazyHDF5Dataset
   # batch dimension; if number of GPUs is N > 1, then a batch_size of N * batch_size will automatically be taken for DataParallel
   batch_size: 1
   # how many subprocesses to use for data loading
-  num_workers: 8
+  num_workers: 24
   # path to the raw data within the H5
   raw_internal_path: raw
   # path to the label data within the H5
   label_internal_path: label
   # apply random shifting and scaling of the patches; value of 20 mean that patches may shrink/stretch by 20px in each dimension
-  random_scale: 20
+  random_scale: 4
   # random scale execution probability; since random scale is quite slow for 3D data, we set it to 0.1
   random_scale_probability: 0.1
   # compute global dataset statistics (mean, std) for Standardize transformer
@@ -84,15 +84,15 @@ loaders:
   train:
     # paths to the training datasets
     file_paths:
-      - unet/train
+      - C:\Users\Liam Sullivan\research-25-26\unet\train
 
     # SliceBuilder configuration, i.e. how to iterate over the input volume patch-by-patch
     slice_builder:
       name: FilterSliceBuilder
       # train patch size given to the network (adapt to fit in your GPU mem, generally the bigger patch the better)
-      patch_shape: [ 80, 170, 170 ]
+      patch_shape: [ 32, 64, 64 ]
       # train stride between patches
-      stride_shape: [ 20, 40, 40 ]
+      stride_shape: [ 8, 16, 16 ]
       # minimum volume of the labels in the patch
       threshold: 0.01
       # probability of accepting patches which do not fulfil the threshold criterion
@@ -101,7 +101,7 @@ loaders:
     transformer:
       raw:
         # subtract mean and divide by std dev
-        - name: Standardize
+#        - name: Standardize
         # randomly flips the volume in one of the axis
         - name: RandomFlip
         # randomly rotates the volume with 90 deg across a randomly chosen plane
@@ -135,15 +135,15 @@ loaders:
   val:
     # paths to the val datasets
     file_paths:
-      - unet/label
+      - C:\Users\Liam Sullivan\research-25-26\unet\validation
 
     # SliceBuilder configuration, i.e. how to iterate over the input volume patch-by-patch
     slice_builder:
       name: FilterSliceBuilder
       # train patch size given to the network (adapt to fit in your GPU mem, generally the bigger patch the better)
-      patch_shape: [ 80, 170, 170 ]
+      patch_shape: [ 32, 64, 64 ]
       # train stride between patches
-      stride_shape: [ 80, 170, 170 ]
+      stride_shape: [ 8, 16, 16 ]
       # minimum volume of the labels in the patch
       threshold: 0.01
       # probability of accepting patches which do not fulfil the threshold criterion
@@ -152,7 +152,7 @@ loaders:
     # data augmentation
     transformer:
       raw:
-        - name: Standardize
+#        - name: Standardize
         - name: ToTensor
           expand_dims: true
       label:
