@@ -4,6 +4,8 @@
 
 import yaml
 import time
+import logging
+import sys
 
 import pandas as pd
 import torch
@@ -16,65 +18,83 @@ from preprocessor import correct_bias_fields, correct_class_labels, impute_unkno
     register_to_mni, scale_pad_label
 from unet.unet_format_converter import save_images
 
+logger = logging.getLogger("DuoContour")
 
 def main():
     start_time = time.time()
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print("Using device:", torch.cuda.get_device_name(device))
-    else:
-        device = torch.device("cpu")
-        print("Using device: CPU")
 
     with open("config.yaml", "r") as f:
-        database_location = yaml.safe_load(f).get("database")
+        yaml_file = yaml.safe_load(f)
+        database_location = yaml_file["database"]
+        log_file = yaml_file["log_file"]
+
+    with open(log_file, 'w'):
+        pass
+
+    log_format = "%(asctime)s [%(threadName)s] %(levelname)s %(name)s - %(message)s"
+
+    logging.basicConfig(filename=log_file,
+                        filemode='a',
+                        format=log_format,
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        level=logging.DEBUG)
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter(log_format))
+    logger.addHandler(console_handler)
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        logger.info("Using device:" + torch.cuda.get_device_name(device))
+    else:
+        device = torch.device("cpu")
+        logger.info("Using device: CPU")
 
     sql_engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    load_all(sql_engine)
-    preprocess(sql_engine)
-    save_to_hdf5(sql_engine)
+    # load_all(sql_engine)
+    # preprocess(sql_engine)
+    # save_to_hdf5(sql_engine)
     train_model()
 
-    print("Finished in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info("Finished in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 
 def load_all(sql_engine):
     start_time = time.time()
 
-    print("\nLoading Images...")
+    logger.info("Loading Images...")
 
-    load_images(sql_engine, "brainmask", "raw")
+    load_images(sql_engine, "brainmask", "raw_image")
     load_images(sql_engine, "aseg", "raw_label")
 
-    print("Finished loading in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info("Finished loading in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 
 def preprocess(sql_engine):
     start_time = time.time()
 
-    print("\nPreprocessing Images...")
+    logger.info("Preprocessing Images...")
 
-    pad_images(sql_engine, "raw", "padded")
+    pad_images(sql_engine, "raw_image", "padded_image")
     scale_pad_label(sql_engine, "raw_label", "padded_label")
-    register_to_mni(sql_engine, "padded", "padded_label", "mni_registered", "mni_registered_label")
+    register_to_mni(sql_engine, "padded_image", "padded_label", "mni_registered_image", "mni_registered_label")
     correct_bias_fields(sql_engine)
     normalize(sql_engine)
     impute_unknown(sql_engine)
     correct_class_labels(sql_engine)
 
-    print("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 def save_to_hdf5(sql_engine):
     start_time = time.time()
 
-    print("\nSaving Images to HDF5...")
+    logger.info("Saving Images to HDF5...")
 
     with open("config.yaml", "r") as f:
         open_file = yaml.safe_load(f)
-        train_config_file = open_file.get("train_config")
-        train_path = open_file.get("train")
-        validation_path = open_file.get("validation")
+        train_path = open_file["unet"]["train"]
+        validation_path = open_file["unet"]["validation"]
 
     with sql_engine.connect() as conn:
         images = pd.read_sql_query("SELECT * FROM preprocessed", conn)
@@ -94,20 +114,20 @@ def save_to_hdf5(sql_engine):
     save_images(sql_engine, "train", train_path)
     save_images(sql_engine, "validation", validation_path)
 
-    print("Finished saving to HDF5 in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info("Finished saving to HDF5 in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 def train_model():
     start_time = time.time()
 
-    print("\nTraining Model...")
+    logger.info("Training Model...")
 
     with open("config.yaml", "r") as f:
         open_file = yaml.safe_load(f)
-        train_config_file = open_file.get("train_config")
+        train_config_file = open_file["unet"]["train_config"]
 
     train_unet(train_config_file)
 
-    print("Finished training in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info("Finished training in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
 
 if __name__ == "__main__":
     main()

@@ -5,3 +5,4 @@
 /unet/validation/
 /unet/train_config.yaml
 /unet/test_config.yaml
+*.log
