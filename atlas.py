@@ -1,6 +1,6 @@
 import nibabel as nib
 import numpy as np
-import json
+import yaml
 from nilearn import datasets, image
 import SimpleITK as sitk
 from tqdm import tqdm
@@ -13,7 +13,7 @@ from preprocessor import load_mni_template, center_pad
 
 def load_atlas(atlas_path):
     with open("config.yaml") as config_file:
-        mni_path = json.load(config_file).get("mni_template")
+        mni_path = yaml.safe_load(config_file)["mni_template"]
 
     dimensions = (256, 256, 256)
     atlas = nib.load(atlas_path)
@@ -80,6 +80,7 @@ def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dic
 
 
 if __name__ == "__main__":
+    load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
     atlas_data = nib.load(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
     # atlas_data = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
     image_data = nib.load(r"D:\Liam Sullivan LTS\label\OAS1_0075_MR1.nii.gz").get_fdata()
