@@ -1,11 +1,13 @@
 import nibabel as nib
 import numpy as np
 import yaml
+from nibabel import Nifti1Image
 from nilearn import datasets, image
 import SimpleITK as sitk
 from tqdm import tqdm
 from os import path
 import pandas as pd
+from PIL import Image
 
 from unet.unet_format_converter import fs_to_cont
 from preprocessor import load_mni_template, center_pad
@@ -18,52 +20,35 @@ def load_atlas(atlas_path):
     dimensions = (256, 256, 256)
     atlas = nib.load(atlas_path)
     fdata = np.round(atlas.get_fdata())
-    for slc, row, col in np.argwhere(fdata != 0):
-        fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
-    center_pad(fdata, dimensions)
-    atlas = nib.Nifti1Image(fdata, np.eye(4))
+    # for slc, row, col in np.argwhere(fdata != 0):
+    #     fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
+    fdata = center_pad(fdata, dimensions)
+    atlas = nib.Nifti1Image(fdata, np.array([[1, 0, 0, 0],
+                                             [0, 1, 0, 0],
+                                             [0, 0, 1, 0],
+                                             [0, 0, 0, 1]]))
     atlas_save_path = path.splitext(atlas_path)[0]
     atlas_save_path = path.splitext(atlas_save_path)[0]
     atlas_save_path += ".nii.gz"
     nib.save(atlas, atlas_save_path)
 
-    load_mni_template(mni_path)
+    mni_template_fdata = load_mni_template(mni_path).get_fdata()
 
-    fixed = sitk.ReadImage(mni_path, sitk.sitkFloat32)
+    limits = [[0, 255], [0, 255], [0, 255]]
 
-    R = sitk.ImageRegistrationMethod()
-    R.SetMetricAsMeanSquares()
-    R.SetOptimizerAsRegularStepGradientDescent(4.0, 0.01, 200)
-    R.SetInitialTransform(sitk.TranslationTransform(fixed.GetDimension()))
-    R.SetInterpolator(sitk.sitkLinear)
+    transposed_arrays = [mni_template_fdata,
+                         mni_template_fdata.transpose(1, 0, 2),
+                         mni_template_fdata.transpose(2, 0, 1)]
 
-    def command_iteration(method):
-        method.GetOptimizerIteration()
-        method.GetMetricValue()
-        method.GetOptimizerPosition()
-
-    R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
-
-    moving = sitk.ReadImage(atlas_save_path, sitk.sitkFloat32)
-
-    outTx = R.Execute(fixed, moving)
-    outTx.SetOffset([np.round(x) for x in outTx.GetOffset()])
-
-    resampler = sitk.ResampleImageFilter()
-    resampler.SetReferenceImage(fixed)
-    resampler.SetInterpolator(sitk.sitkLinear)
-    resampler.SetDefaultPixelValue(0)
-    resampler.SetTransform(outTx)
-
-    out = resampler.Execute(moving)
-    simg2 = sitk.Cast(sitk.RescaleIntensity(out), sitk.sitkUInt8)
-
-    moved_img_arr = sitk.GetArrayFromImage(simg2)
-
-    sitk.WriteImage(sitk.GetImageFromArray(moved_img_arr), atlas_save_path)
+    for i in range(len(transposed_arrays)):
+        for start in range(len(transposed_arrays[i])):
+            if np.any(transposed_arrays[i][start]) and limits[i][0] == 0:
+                limits[i][0] = start
+        for end in range(len(transposed_arrays[i]) - 1, 0, -1):
+            if np.any(transposed_arrays[i][end]) and limits[i][1] == 255:
+                limits[i][1] = end
 
     return nib.load(atlas_save_path)
-
 
 def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dict:
     image_card = len(np.nonzero(image))
@@ -80,10 +65,4 @@ def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dic
 
 
 if __name__ == "__main__":
-    load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
-    atlas_data = nib.load(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
-    # atlas_data = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz").get_fdata()
-    image_data = nib.load(r"D:\Liam Sullivan LTS\label\OAS1_0075_MR1.nii.gz").get_fdata()
-    structs = list(range(len(pd.read_csv("seg_values.csv").index)))
-    dscs = compare_to_atlas(image_data, atlas_data, structs)
-    print(dscs)
+    img = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
