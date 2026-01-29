@@ -57,7 +57,7 @@ def main():
     # save_to_hdf5(sql_engine)
     train_model()
 
-    logger.info("Finished in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info(f"Finished in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 
 def load_all(sql_engine):
@@ -68,7 +68,7 @@ def load_all(sql_engine):
     load_images(sql_engine, "brainmask", "raw_image")
     load_images(sql_engine, "aseg", "raw_label")
 
-    logger.info("Finished loading in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info(f"Finished loading in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 
 def preprocess(sql_engine):
@@ -84,7 +84,8 @@ def preprocess(sql_engine):
     impute_unknown(sql_engine)
     correct_class_labels(sql_engine)
 
-    logger.info("Finished preprocessing in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info(f"Finished preprocessing in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
+
 
 def save_to_hdf5(sql_engine):
     start_time = time.time()
@@ -94,11 +95,11 @@ def save_to_hdf5(sql_engine):
     with open("config.yaml", "r") as f:
         open_file = yaml.safe_load(f)
         train_path = open_file["unet"]["train"]
-        validation_path = open_file["unet"]["validation"]
+        testing_path = open_file["unet"]["validation"]
 
     with sql_engine.connect() as conn:
-        images = pd.read_sql_query("SELECT * FROM preprocessed", conn)
-        labels = pd.read_sql_query("SELECT * FROM label", conn)
+        images = pd.read_sql_query("SELECT * FROM preprocessed_image", conn)
+        labels = pd.read_sql_query("SELECT * FROM preprocessed_label", conn)
 
     images.sort_values(by=["name"], inplace=True, ignore_index=True)
     labels.sort_values(by=["name"], inplace=True, ignore_index=True)
@@ -106,15 +107,16 @@ def save_to_hdf5(sql_engine):
     data = images.copy().reset_index(drop=True)
     data["label"] = labels["image"]
 
-    train, val = train_test_split(data, test_size=0.15)
+    train_test, val = train_test_split(data, test_size=0.15)
+    train, test = train_test_split(train_test, test_size=0.15)
 
     train.to_sql(name="train", con=sql_engine, if_exists="replace", index=False)
-    val.to_sql(name="validation", con=sql_engine, if_exists="replace", index=False)
+    test.to_sql(name="testing", con=sql_engine, if_exists="replace", index=False)
 
     save_images(sql_engine, "train", train_path)
-    save_images(sql_engine, "validation", validation_path)
+    save_images(sql_engine, "testing", testing_path)
 
-    logger.info("Finished saving to HDF5 in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info(f"Finished saving to HDF5 in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 def train_model():
     start_time = time.time()
@@ -127,7 +129,7 @@ def train_model():
 
     train_unet(train_config_file)
 
-    logger.info("Finished training in", time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    logger.info(f"Finished training in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 if __name__ == "__main__":
     main()
