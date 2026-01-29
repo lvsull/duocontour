@@ -295,15 +295,15 @@ class UNetTrainer:
         Returns:
             True if training should stop, False otherwise.
         """
-        # if self.max_num_iterations < self.num_iterations:
-        #     logger.info(f"Maximum number of iterations {self.max_num_iterations} exceeded.")
-        #     return True
-
-        min_lr = 1e-6
-        lr = self.optimizer.param_groups[0]["lr"]
-        if lr < min_lr:
-            logger.info(f"Learning rate below the minimum {min_lr}.")
+        if self.max_num_iterations < self.num_iterations:
+            logger.info(f"Maximum number of iterations {self.max_num_iterations} exceeded.")
             return True
+
+        # min_lr = 1e-6
+        # lr = self.optimizer.param_groups[0]["lr"]
+        # if lr < min_lr:
+        #     logger.info(f"Learning rate below the minimum {min_lr}.")
+        #     return True
 
         return False
 
