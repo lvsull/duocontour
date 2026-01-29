@@ -8,6 +8,7 @@ from tqdm import tqdm
 from os import path
 import pandas as pd
 from PIL import Image
+from scipy.ndimage import zoom
 
 from unet.unet_format_converter import fs_to_cont
 from preprocessor import load_mni_template, center_pad
@@ -31,22 +32,36 @@ def load_atlas(atlas_path):
     atlas_save_path = path.splitext(atlas_save_path)[0]
     atlas_save_path += ".nii.gz"
     nib.save(atlas, atlas_save_path)
+    atlas = nib.load(atlas_save_path)
 
     mni_template_fdata = load_mni_template(mni_path).get_fdata()
 
-    limits = [[0, 255], [0, 255], [0, 255]]
+    def find_bounds(arr):
+        bounds = [[0, arr.shape[0]], [0, arr.shape[1]], [0, arr.shape[2]]]
 
-    transposed_arrays = [mni_template_fdata,
-                         mni_template_fdata.transpose(1, 0, 2),
-                         mni_template_fdata.transpose(2, 0, 1)]
+        transposed_arrays = [arr, arr.transpose(1, 0, 2), arr.transpose(2, 0, 1)]
 
-    for i in range(len(transposed_arrays)):
-        for start in range(len(transposed_arrays[i])):
-            if np.any(transposed_arrays[i][start]) and limits[i][0] == 0:
-                limits[i][0] = start
-        for end in range(len(transposed_arrays[i]) - 1, 0, -1):
-            if np.any(transposed_arrays[i][end]) and limits[i][1] == 255:
-                limits[i][1] = end
+        for i in range(len(transposed_arrays)):
+            for start in range(len(transposed_arrays[i])):
+                if np.any(transposed_arrays[i][start]) and bounds[i][0] == 0:
+                    bounds[i][0] = start
+            for end in range(len(transposed_arrays[i]) - 1, 0, -1):
+                if np.any(transposed_arrays[i][end]) and bounds[i][1] == arr.shape[i]:
+                    bounds[i][1] = end
+
+        return bounds
+
+    mni_bounds = find_bounds(mni_template_fdata)
+    atlas_bounds = find_bounds(atlas.get_fdata())
+
+    scale = [1, 1, 1]
+
+    for dim in range(3):
+        scale[dim] = (mni_bounds[dim][1] - mni_bounds[dim][0]) / (atlas_bounds[dim][1] - atlas_bounds[dim][0])
+
+    scaled_atlas = zoom(atlas.get_fdata(), scale)
+
+    new_mni_bounds = find_bounds()
 
     return nib.load(atlas_save_path)
 
