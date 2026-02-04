@@ -9,12 +9,14 @@ from os import path
 import pandas as pd
 from PIL import Image
 from scipy.ndimage import zoom
+import time
 
 from unet.unet_format_converter import fs_to_cont
 from preprocessor import load_mni_template, center_pad
 
 
 def load_atlas(atlas_path):
+    start_time = time.time()
     with open("config.yaml") as config_file:
         mni_path = yaml.safe_load(config_file)["mni_template"]
 
@@ -59,11 +61,23 @@ def load_atlas(atlas_path):
     for dim in range(3):
         scale[dim] = (mni_bounds[dim][1] - mni_bounds[dim][0]) / (atlas_bounds[dim][1] - atlas_bounds[dim][0])
 
-    scaled_atlas = zoom(atlas.get_fdata(), scale)
+    for
 
-    new_mni_bounds = find_bounds()
+    new_mni_bounds = find_bounds(zoomed_atlas)
+
+    cutoff_bounds = [[0, 0], [0, 0], [0, 0]]
+    for point in range(len(new_mni_bounds)):
+        cutoff_bounds[point][0] = new_mni_bounds[point][0] - mni_bounds[point][0]
+        cutoff_bounds[point][1] = cutoff_bounds[point][0] + 256
+
+    scaled_atlas = (zoomed_atlas[cutoff_bounds[0][0]:cutoff_bounds[0][1], cutoff_bounds[1][0]:cutoff_bounds[1][1], cutoff_bounds[2][0]:cutoff_bounds[2][1]])
+
+    nib.save(nib.Nifti1Image(scaled_atlas, np.eye(4)), atlas_save_path)
+
+    print(f"Finished loading atlas in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
     return nib.load(atlas_save_path)
+
 
 def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dict:
     image_card = len(np.nonzero(image))
