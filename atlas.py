@@ -1,30 +1,30 @@
+from os import path
+
 import nibabel as nib
 import numpy as np
 import yaml
-from nibabel import Nifti1Image
-from nilearn import datasets, image
-import SimpleITK as sitk
+from nibabel.filebasedimages import FileBasedImage
+from skimage.transform import resize
 from tqdm import tqdm
-from os import path
-import pandas as pd
-from PIL import Image
-from scipy.ndimage import zoom
-import time
 
+from preprocessor import center_pad, load_mni_template
 from unet.unet_format_converter import fs_to_cont
-from preprocessor import load_mni_template, center_pad
 
 
-def load_atlas(atlas_path):
-    start_time = time.time()
+def load_atlas(atlas_path: str) -> FileBasedImage:
+    """
+    Load and preprocess atlas from the specified path
+    :param atlas_path: Location of the raw atlas
+    :type atlas_path: str
+    :return: View of the preprocessed atlas
+    :rtype: nibabel.filebasedimages.FileBasedImage
+    """
     with open("config.yaml") as config_file:
         mni_path = yaml.safe_load(config_file)["mni_template"]
 
     dimensions = (256, 256, 256)
     atlas = nib.load(atlas_path)
     fdata = np.round(atlas.get_fdata())
-    # for slc, row, col in np.argwhere(fdata != 0):
-    #     fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
     fdata = center_pad(fdata, dimensions)
     atlas = nib.Nifti1Image(fdata, np.array([[1, 0, 0, 0],
                                              [0, 1, 0, 0],
@@ -35,8 +35,14 @@ def load_atlas(atlas_path):
     atlas_save_path += ".nii.gz"
     nib.save(atlas, atlas_save_path)
     atlas = nib.load(atlas_save_path)
+    atlas_fdata = atlas.get_fdata()
 
-    mni_template_fdata = load_mni_template(mni_path).get_fdata()
+    for slc, row, col in np.argwhere(atlas_fdata == 31):
+        atlas_fdata[slc][row][col] = 2
+    for slc, row, col in np.argwhere(atlas_fdata == 63):
+        atlas_fdata[slc][row][col] = 41
+
+    mni_template_fdata = np.flip(load_mni_template(mni_path).get_fdata().transpose(0, 2, 1), 1)
 
     def find_bounds(arr):
         bounds = [[0, arr.shape[0]], [0, arr.shape[1]], [0, arr.shape[2]]]
@@ -54,27 +60,27 @@ def load_atlas(atlas_path):
         return bounds
 
     mni_bounds = find_bounds(mni_template_fdata)
-    atlas_bounds = find_bounds(atlas.get_fdata())
+    atlas_bounds = find_bounds(atlas_fdata)
 
     scale = [1, 1, 1]
 
     for dim in range(3):
         scale[dim] = (mni_bounds[dim][1] - mni_bounds[dim][0]) / (atlas_bounds[dim][1] - atlas_bounds[dim][0])
 
-    for
+    resized_arr = resize(atlas_fdata, (256 * scale[0], 256 * scale[1], 256 * scale[2]), order=0)
 
-    new_mni_bounds = find_bounds(zoomed_atlas)
+    window = [[0, 0], [0, 0], [0, 0]]
 
-    cutoff_bounds = [[0, 0], [0, 0], [0, 0]]
-    for point in range(len(new_mni_bounds)):
-        cutoff_bounds[point][0] = new_mni_bounds[point][0] - mni_bounds[point][0]
-        cutoff_bounds[point][1] = cutoff_bounds[point][0] + 256
+    for i in range(len(resized_arr.shape)):
+        window[i][0] = int(np.round((resized_arr.shape[i] - 256) / 2))
+        window[i][1] = window[i][0] + 256
 
-    scaled_atlas = (zoomed_atlas[cutoff_bounds[0][0]:cutoff_bounds[0][1], cutoff_bounds[1][0]:cutoff_bounds[1][1], cutoff_bounds[2][0]:cutoff_bounds[2][1]])
+    resized_arr = resized_arr[window[0][0]:window[0][1], window[1][0]:window[1][1], window[2][0]:window[2][1]]
 
-    nib.save(nib.Nifti1Image(scaled_atlas, np.eye(4)), atlas_save_path)
+    for slc, row, col in np.argwhere(resized_arr != 0):
+        resized_arr[slc][row][col] = fs_to_cont(resized_arr[slc][row][col])
 
-    print(f"Finished loading atlas in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
+    nib.save(nib.Nifti1Image(resized_arr, np.eye(4)), atlas_save_path)
 
     return nib.load(atlas_save_path)
 
@@ -94,4 +100,4 @@ def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dic
 
 
 if __name__ == "__main__":
-    img = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
+    atlas = load_atlas(r"labels.mgz")
