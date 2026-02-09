@@ -107,11 +107,12 @@ def save_to_hdf5(sql_engine):
     data = images.copy().reset_index(drop=True)
     data["label"] = labels["image"]
 
-    train_test, val = train_test_split(data, test_size=0.15)
-    train, test = train_test_split(train_test, test_size=0.15)
+    train, temp = train_test_split(data, train_size=0.70)
+    test, val = train_test_split(temp, train_size=0.50)
 
     train.to_sql(name="train", con=sql_engine, if_exists="replace", index=False)
     test.to_sql(name="testing", con=sql_engine, if_exists="replace", index=False)
+    val.to_sql(name="validation", con=sql_engine, if_exists="replace", index=False)
 
     save_images(sql_engine, "train", train_path)
     save_images(sql_engine, "testing", testing_path)
