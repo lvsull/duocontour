@@ -1,12 +1,11 @@
-import pandas as pd
 import pickle
-import h5py
-from tqdm import tqdm
-from shutil import rmtree
 from os import mkdir
-import sqlalchemy
-import numpy as np
+from shutil import rmtree
 
+import h5py
+import pandas as pd
+import sqlalchemy
+from tqdm import tqdm
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
@@ -60,7 +59,7 @@ def fs_to_cont(value: int) -> int:
         return 0
 
 
-def cont_to_fs(value):
+def cont_to_fs(value: int) -> int:
     """
     Convert a label value in continuous format to FreeSurfer format
     :param value: The continuous label value to convert
