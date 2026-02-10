@@ -1,7 +1,7 @@
 """
 11/4/25
 """
-
+import sqlalchemy
 import yaml
 import time
 import logging
@@ -14,8 +14,8 @@ from sklearn.model_selection import train_test_split
 from sqlalchemy import create_engine
 
 from dataloader import load_images
-from preprocessor import correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
-    register_to_mni, scale_pad_label
+from preprocessor import reorient, correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
+    register_to_mni, scale_pad_labels
 from unet.unet_format_converter import save_images
 
 logger = logging.getLogger("DuoContour")
@@ -52,15 +52,23 @@ def main():
 
     sql_engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    # load_all(sql_engine)
-    # preprocess(sql_engine)
-    # save_to_hdf5(sql_engine)
+    load_all(sql_engine)
+    preprocess(sql_engine)
+    save_to_hdf5(sql_engine)
     train_model()
 
     logger.info(f"Finished in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 
-def load_all(sql_engine):
+def load_all(sql_engine: sqlalchemy.engine.base.Engine) -> None:
+    """
+    Load all OASIS and CANDI images into a SQL database
+    :param sql_engine: Engine connected to the database to save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :return: None
+    :rtype: NoneType
+    """
+
     start_time = time.time()
 
     logger.info("Loading Images...")
@@ -71,23 +79,47 @@ def load_all(sql_engine):
     logger.info(f"Finished loading in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 
-def preprocess(sql_engine):
+def preprocess(sql_engine: sqlalchemy.engine.base.Engine) -> None:
+    """
+    Preprocessing pipeline. Steps are as follows:\n
+    1. Pad images to a uniform size (256, 256, 256) by default\n
+    2. Scale labels to the same resolution and pad to the same size\n
+    3. Register all images and labels to the MNI template\n
+    4. Correct bias fields in images\n
+    5. Normalize image intensities using z-score standardization\n
+    6. Impute unknown label values\n
+    7. Correct class label values from the FreeSurfer format to a continuous format [0, 36]\n
+    8. Reorient images so the correct side is up in their arrays\n
+    :param sql_engine: Engine connected to the database to read and save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :return: None
+    :rtype: NoneType
+    """
     start_time = time.time()
 
     logger.info("Preprocessing Images...")
 
     pad_images(sql_engine, "raw_image", "padded_image")
-    scale_pad_label(sql_engine, "raw_label", "padded_label")
+    scale_pad_labels(sql_engine, "raw_label", "padded_label")
     register_to_mni(sql_engine, "padded_image", "padded_label", "mni_registered_image", "mni_registered_label")
     correct_bias_fields(sql_engine)
     normalize(sql_engine)
     impute_unknown(sql_engine)
     correct_class_labels(sql_engine)
+    reorient(sql_engine, "normalized_image", "preprocessed_image")
+    reorient(sql_engine, "corrected_label", "preprocessed_label")
 
     logger.info(f"Finished preprocessing in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 
-def save_to_hdf5(sql_engine):
+def save_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine) -> None:
+    """
+    Save images to the HDF5 format required by pytorch3dunet
+    :param sql_engine: Engine connected to the database to save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :return: None
+    :rtype: NoneType
+    """
     start_time = time.time()
 
     logger.info("Saving Images to HDF5...")
@@ -119,7 +151,12 @@ def save_to_hdf5(sql_engine):
 
     logger.info(f"Finished saving to HDF5 in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
-def train_model():
+def train_model() -> None:
+    """
+    Train the U-Net model
+    :return: None
+    :rtype: NoneType
+    """
     start_time = time.time()
 
     logger.info("Training Model...")

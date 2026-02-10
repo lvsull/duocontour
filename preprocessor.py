@@ -1,7 +1,7 @@
 """
 10/4/25
 """
-
+from nibabel.filebasedimages import FileBasedImage
 from yaml import safe_load
 from os import mkdir, path
 from pickle import dumps, loads
@@ -25,19 +25,21 @@ AFFINE = np.array([[-1, 0, 0, 128],
                    [0, 0, 0, 1]])
 
 
-def save_and_get_view(arr: np.ndarray, orig_image, save_path: str, name: str):
+def save_and_get_view(arr: np.ndarray, save_path: str, name: str, header=None):
     """
-    Saves an array as a nibabel.Nifti1Image and returns a view
-    Args:
-        arr ():
-        orig_image ():
-        save_path ():
-        name ():
-
-    Returns:
-
+    Save a np.ndarray as a nibabel.Nifti1Image using a global affine and optionally a specified header
+    :param arr: Image data to save to a file
+    :type arr: numpy.ndarray
+    :param save_path: Directory to save the file to
+    :type save_path: str
+    :param name: Name of the file, will be saved as [filename].nii.gz
+    :type name: str
+    :param header: *optional, default None* Header from a nibabel image to add to the file
+    :type header: Any | None
+    :return: None
+    :rtype: NoneType
     """
-    corrected_image = nib.Nifti1Image(arr, AFFINE, orig_image.header)
+    corrected_image = nib.Nifti1Image(arr, np.eye(4), header)
 
     filepath = path.join(save_path, f"{name}.nii.gz")
     nib.save(corrected_image, filepath)
@@ -45,7 +47,16 @@ def save_and_get_view(arr: np.ndarray, orig_image, save_path: str, name: str):
     return nib.load(filepath)
 
 
-def center_pad(arr, dimensions=(256, 256, 256)):
+def center_pad(arr: np.ndarray, dimensions: tuple[int, int, int] = (256, 256, 256)) -> np.ndarray:
+    """
+    Pad an image array, adding the same amount of padding to opposite sides
+    :param arr: Array to pad to the specified size
+    :type arr: numpy.ndarray
+    :param dimensions: *optional, default (256, 256, 256)* Dimensions to pad the image to
+    :type dimensions: tuple[int, int, int]
+    :return: Padded image
+    :rtype: numpy.ndarray
+    """
     x_diff = dimensions[0] - arr.shape[0]
     y_diff = dimensions[1] - arr.shape[1]
     z_diff = dimensions[2] - arr.shape[2]
@@ -55,9 +66,45 @@ def center_pad(arr, dimensions=(256, 256, 256)):
                   mode="constant", constant_values=0)
 
 
-def scale_pad_label(sql_engine, table="raw_label", save_table="padded_label"):
+def reorient(sql_engine: sqlalchemy.engine.base.Engine, read_table: str, save_table: str):
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
+
+    with open("config.yaml") as yaml_file:
+        save_path = safe_load(yaml_file)[save_table]
+
+    try:
+        rmtree(save_path)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    for subject in tqdm(data.itertuples(), total=len(data), bar_format=bf,
+                        desc="Reorienting Labels" if save_table.endswith("label") else "Reorienting Images"):
+        fdata = loads(subject.image).get_fdata()
+        reoriented_arr = np.flip(fdata.transpose(0, 2, 1), 1)
+        data.loc[subject.Index, "image"] = dumps(save_and_get_view(reoriented_arr, save_path, subject.name))
+
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
+
+
+def scale_pad_labels(sql_engine: sqlalchemy.engine.base.Engine, read_table: str = "raw_label",
+                     save_table: str = "padded_label", dimensions: tuple[int, int, int] = (256, 256, 256)) -> None:
+    """
+    Scale labels and pad them to the given dimensions
+    :param sql_engine: Engine connected to the database to read and save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :param read_table: *optional, default "raw_label"* SQL table to read from
+    :type read_table: str
+    :param save_table: *optional, default "padded_label"* SQL table to save to
+    :type save_table: str
+    :param dimensions: *optional, default (256, 256, 256)* Dimensions to pad images to
+    :type dimensions: tuple[int, int, int]
+    :return: None
+    :rtype: NoneType
+    """
+    with sql_engine.connect() as conn:
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     with open("config.yaml") as yaml_file:
         save_path = safe_load(yaml_file)[save_table]
@@ -86,22 +133,30 @@ def scale_pad_label(sql_engine, table="raw_label", save_table="padded_label"):
             fdata = np.array(fdata)
         else:
             fdata = image.get_fdata()
-        padded_arr = center_pad(fdata, (256, 256, 256))
+        padded_arr = center_pad(fdata, dimensions)
 
-        corrected_image = nib.Nifti1Image(padded_arr, AFFINE)
-
-        filepath = path.join(save_path, f"{subject.name}.nii.gz")
-        nib.save(corrected_image, filepath)
-
-        data.loc[subject.Index, "image"] = dumps(nib.load(filepath))
+        data.loc[subject.Index, "image"] = dumps(save_and_get_view(padded_arr, save_path, subject.name))
 
     data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
 
-def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", save_table="padded",
+def pad_images(sql_engine: sqlalchemy.engine.base.Engine, read_table: str = "raw_label", save_table="padded_label",
                dimensions=(256, 256, 256)) -> None:
+    """
+    Pad all images to the given dimensions by calling center_pad()
+    :param sql_engine: Engine connected to the database to read and save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :param read_table: *optional, default "raw"* SQL table to read from
+    :type read_table: str
+    :param save_table: *optional, default "padded"* SQL table to save to
+    :type save_table: str
+    :param dimensions: *optional, default (256, 256, 256)* Dimensions to pad images to
+    :type dimensions: tuple[int, int, int]
+    :return: None
+    :rtype: NoneType
+    """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     with open("config.yaml") as yaml_file:
         save_path = safe_load(yaml_file)[save_table]
@@ -113,13 +168,13 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
     mkdir(save_path)
 
     for image_tuple in tqdm(data.itertuples(), total=len(data),
-                            desc=f"Padding {"Images" if table == "raw" else "Labels"}",
+                            desc=f"Padding {"Images" if read_table == "raw" else "Labels"}",
                             bar_format=bf):
         orig_image = loads(image_tuple.image)
         fdata = orig_image.get_fdata()
         padded_arr = center_pad(fdata, dimensions)
 
-        padded_image_view = save_and_get_view(padded_arr, orig_image, save_path, image_tuple.name)
+        padded_image_view = save_and_get_view(padded_arr, save_path, image_tuple.name, orig_image.header)
 
         data.loc[image_tuple.Index, "image"] = dumps(padded_image_view)
 
@@ -127,13 +182,15 @@ def pad_images(sql_engine: sqlalchemy.engine.base.Engine, table: str = "raw", sa
 
 
 def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine,
-                        read_table: str = "mni_registered", save_table ="bias_corrected") -> None:
+                        read_table: str = "mni_registered_image", save_table: str = "bias_corrected_image") -> None:
     """
     Corrects bias fields of images stored on a SQL table
-    :param sql_engine: The SLQLAlchemy engine to use
+    :param sql_engine: Engine connected to the database to read and save images to
     :type sql_engine: sqlalchemy.engine.base.Engine
-    :param read_table: *optional, default "raw"* The name of the table to use
+    :param read_table: *optional, default "mni_registered_image"* SQL table to read from
     :type read_table: str
+    :param save_table: *optional, default "bias_corrected_image"* SQL table to save to
+    :type save_table: str
     :return: None
     :rtype: NoneType
     """
@@ -160,27 +217,29 @@ def correct_bias_fields(sql_engine: sqlalchemy.engine.base.Engine,
         corrected_image_itk = corrector.Execute(image, mask_image)
         corrected_array = sitk.GetArrayFromImage(corrected_image_itk)
 
-        corrected_image_view = save_and_get_view(corrected_array, orig_image, save_path, image_tuple.name)
+        corrected_image_view = save_and_get_view(corrected_array, save_path, image_tuple.name, orig_image.header)
 
         data.loc[image_tuple.Index, "image"] = dumps(corrected_image_view)
 
-    data.to_sql(name="bias_corrected", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
 
 def normalize(sql_engine: sqlalchemy.engine.base.Engine,
-              table: str = "bias_corrected", save_table: str = "preprocessed") -> None:
+              read_table: str = "bias_corrected_image", save_table: str = "normalized_image") -> None:
     """
-    Normalizes all data from a SQL table using the selected engine
-    :param sql_engine: The SQLAlchemy engine to use
+    Normalize the image intensities of each image using z-score standardization
+    :param sql_engine: Engine connected to the database to read and save images to
     :type sql_engine: sqlalchemy.engine.base.Engine
-    :param table: *optional, default "bias_corrected"* The name of the table to normalize
-    :type table: str
+    :param read_table: *optional, default "bias_corrected_image"* SQL table to read from
+    :type read_table: str
+    :param save_table: *optional, default "normalized_image" SQL table to save to
+    :type save_table: str
     :return: None
     :rtype: NoneType
     """
 
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     with open("config.yaml") as yaml_file:
         save_path = safe_load(yaml_file)[save_table]
@@ -203,14 +262,21 @@ def normalize(sql_engine: sqlalchemy.engine.base.Engine,
 
         norm_image_arr = masked_data.reshape(orig_shape).filled(fill_value=0)
 
-        norm_image_view = save_and_get_view(norm_image_arr, orig_image, save_path, image_tuple.name)
+        norm_image_view = save_and_get_view(norm_image_arr, save_path, image_tuple.name, orig_image.header)
 
         data.loc[image_tuple.Index, "image"] = dumps(norm_image_view)
 
-    data.to_sql(name="preprocessed", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
 
-def load_mni_template(save_path):
+def load_mni_template(save_path: str) -> FileBasedImage:
+    """
+    Load MNI152 template
+    :param save_path: Path to save the image to
+    :type save_path: str
+    :return: View of the MNI template
+    :rtype: nibabel.filebasedimages.FileBasedImage
+    """
     dimensions = (256, 256, 256)
     mni_template_orig = datasets.load_mni152_template()
     mni_template_data = mni_template_orig.get_fdata()
@@ -222,22 +288,33 @@ def load_mni_template(save_path):
     orig_affine = mni_template_orig.affine
     mni_template = nib.Nifti1Image(padded_mni_template_data,
                                    affine=np.asarray([[1, 0, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
-                                                      [0, 1, 0] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
-                                                      [0, 0, 1] + [orig_affine[0][3] - int(np.floor(x_diff / 2))],
+                                                      [0, 1, 0] + [orig_affine[0][3] - int(np.floor(y_diff / 2))],
+                                                      [0, 0, 1] + [orig_affine[0][3] - int(np.floor(z_diff / 2))],
                                                       [0, 0, 0, 1]]))
 
     nib.save(mni_template, save_path)
 
     return nib.load(save_path)
 
-def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
-    """
-    Registers images to MNI space\n
-    Adapted from https://simpleitk.readthedocs.io/en/master/link_ImageRegistrationMethod1_docs.html#overview
-    :return:
-    :rtype:
-    """
 
+def register_to_mni(sql_engine: sqlalchemy.engine.base.Engine,
+                    read_img: str, read_lbl: str, save_img: str, save_lbl: str) -> None:
+    """
+    Registers images to MNI152 space\n
+    Adapted from https://simpleitk.readthedocs.io/en/master/link_ImageRegistrationMethod1_docs.html#overview
+    :param sql_engine: Engine connected to the database to read and save images to
+    :type sql_engine: sqlalchemy.engine.base.Engine
+    :param read_img: SQL table to read images from
+    :type read_img: str
+    :param read_lbl: SQL table to read labels from
+    :type read_lbl: str
+    :param save_img: SQL table to save images to
+    :type save_img: str
+    :param save_lbl: SQL table to save labels to
+    :type save_lbl: str
+    :return: None
+    :rtype: NoneType
+    """
     with sql_engine.connect() as conn:
         image_data = pd.read_sql_query(f"SELECT * FROM {read_img}", conn)
         label_data = pd.read_sql_query(f"SELECT * FROM {read_lbl}", conn)
@@ -315,19 +392,23 @@ def register_to_mni(sql_engine, read_img, read_lbl, save_img, save_lbl):
     label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
 
 
-def impute_unknown(sql_engine, table="mni_registered_label"):
+def impute_unknown(sql_engine: sqlalchemy.engine.base.Engine, read_table: str = "mni_registered_label", save_table: str = "imputed_label"):
     """
     Impute unknown values from label data stored in a SQL table
     :param sql_engine: The SQLAlchemy engine to use
     :type sql_engine: sqlalchemy.engine.base.Engine
+    :param read_table: *optional, default "mni_registered_label"* SQL table to read from
+    :type read_table: str
+    :param save_table: *optional, default "imputed_label"* SQL table to save to
+    :type save_table: str
     :return: None
     :rtype: NoneType
     """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     with open("config.yaml") as yaml_file:
-        save_path = safe_load(yaml_file)["imputed_label"]
+        save_path = safe_load(yaml_file)[save_table]
 
     try:
         rmtree(save_path)
@@ -358,21 +439,32 @@ def impute_unknown(sql_engine, table="mni_registered_label"):
                 case 251 | 252 | 253 | 254 | 255:  # corpus callosum segmentation, should not exist
                     fdata[slc][row][col] = 0
 
-        imputed_label_view = save_and_get_view(fdata, orig_image, save_path, subject.name)
+                case 31:  # left choroid plexus
+                    fdata[slc][row][col] = 2
+                case 63:  # right choroid plexus
+                    fdata[slc][row][col] = 41
+
+        imputed_label_view = save_and_get_view(fdata, save_path, subject.name, orig_image.header)
         data.loc[subject.Index, "image"] = dumps(imputed_label_view)
 
-    data.to_sql(name="imputed_label", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
 
-def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imputed_label", save_table="preprocessed_label") -> None:
+
+def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, read_table: str = "imputed_label",
+                         save_table: str = "corrected_label") -> None:
     """
     Corrects class labes to be continuous [0, 36]
-    :param sql_engine: The SQLAlchemy engine to use
+    :param sql_engine: Engine connected to the database to read and save images to
     :type sql_engine: sqlalchemy.engine.base.Engine
+    :param read_table: SQL table to read from
+    :type read_table: str
+    :param save_table: SQL table to save to
+    :type save_table: str
     :return: None
     :rtype: NoneType
     """
     with sql_engine.connect() as conn:
-        data = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+        data = pd.read_sql_query(f"SELECT * FROM {read_table}", conn)
 
     with open("config.yaml") as yaml_file:
         save_path = safe_load(yaml_file)[save_table]
@@ -389,7 +481,7 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, table="imput
         for slc, row, col in np.argwhere(fdata != 0):
             fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
 
-        corrected_label_view = save_and_get_view(fdata, orig_image, save_path, subject.name)
+        corrected_label_view = save_and_get_view(fdata, save_path, subject.name, orig_image.header)
         data.loc[subject.Index, "image"] = dumps(corrected_label_view)
 
-    data.to_sql(name="label", con=sql_engine, if_exists="replace", index=False)
+    data.to_sql(name=save_table, con=sql_engine, if_exists="replace", index=False)
