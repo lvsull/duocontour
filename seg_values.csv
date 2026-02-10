@@ -1,4 +1,5 @@
 SegID,StructName
+0,Unknown
 2,Left-Cerebral-White-Matter
 3,Left-Cerebral-Cortex
 4,Left-Lateral-Ventricle
@@ -36,4 +37,3 @@ SegID,StructName
 72,5th-Ventricle
 77,WM-hypointensities
 85,Optic-Chiasm
-0,Unknown
