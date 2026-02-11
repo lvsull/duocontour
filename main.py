@@ -127,7 +127,8 @@ def save_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine) -> None:
     with open("config.yaml", "r") as f:
         open_file = yaml.safe_load(f)
         train_path = open_file["unet"]["train"]
-        testing_path = open_file["unet"]["validation"]
+        validation_path = open_file["unet"]["validation"]
+        test_path = open_file["unet"]["test"]
 
     with sql_engine.connect() as conn:
         images = pd.read_sql_query("SELECT * FROM preprocessed_image", conn)
@@ -140,14 +141,15 @@ def save_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine) -> None:
     data["label"] = labels["image"]
 
     train, temp = train_test_split(data, train_size=0.70)
-    test, val = train_test_split(temp, train_size=0.50)
+    val, test = train_test_split(temp, train_size=0.50)
 
     train.to_sql(name="train", con=sql_engine, if_exists="replace", index=False)
-    test.to_sql(name="testing", con=sql_engine, if_exists="replace", index=False)
     val.to_sql(name="validation", con=sql_engine, if_exists="replace", index=False)
+    test.to_sql(name="testing", con=sql_engine, if_exists="replace", index=False)
 
     save_images(sql_engine, "train", train_path)
-    save_images(sql_engine, "testing", testing_path)
+    save_images(sql_engine, "validation", validation_path)
+    save_images(sql_engine, "testing", test_path)
 
     logger.info(f"Finished saving to HDF5 in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
