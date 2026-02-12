@@ -1,4 +1,5 @@
 from os import path
+import os
 
 import nibabel as nib
 import numpy as np
@@ -10,64 +11,41 @@ from tqdm import tqdm
 from preprocessor import center_pad, load_mni_template
 from unet.unet_format_converter import fs_to_cont
 
+import SimpleITK as sitk
 
-def load_atlas(atlas_path: str) -> FileBasedImage:
-    """
-    Load and preprocess atlas from the specified path
-    :param atlas_path: Location of the raw atlas
-    :type atlas_path: str
-    :return: View of the preprocessed atlas
-    :rtype: nibabel.filebasedimages.FileBasedImage
-    """
-    with open("config.yaml") as config_file:
-        mni_path = yaml.safe_load(config_file)["mni_template"]
+bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
-    dimensions = (256, 256, 256)
-    atlas = nib.load(atlas_path)
-    fdata = np.round(atlas.get_fdata())
-    fdata = center_pad(fdata, dimensions)
-    atlas = nib.Nifti1Image(fdata, np.array([[1, 0, 0, 0],
-                                             [0, 1, 0, 0],
-                                             [0, 0, 1, 0],
-                                             [0, 0, 0, 1]]))
-    atlas_save_path = path.splitext(atlas_path)[0]
-    atlas_save_path = path.splitext(atlas_save_path)[0]
-    atlas_save_path += ".nii.gz"
-    nib.save(atlas, atlas_save_path)
-    atlas = nib.load(atlas_save_path)
-    atlas_fdata = atlas.get_fdata()
+AFFINE = np.array([[-1, 0, 0, 128],
+                   [0, 0, 1, -128],
+                   [0, -1, 0, 128],
+                   [0, 0, 0, 1]])
 
-    for slc, row, col in np.argwhere(atlas_fdata == 31):
-        atlas_fdata[slc][row][col] = 2
-    for slc, row, col in np.argwhere(atlas_fdata == 63):
-        atlas_fdata[slc][row][col] = 41
+def find_bounds(arr, threshold = 0.05):
+    bounds = [[0, arr.shape[0]], [0, arr.shape[1]], [0, arr.shape[2]]]
 
-    mni_template_fdata = np.flip(load_mni_template(mni_path).get_fdata().transpose(0, 2, 1), 1)
+    transposed_arrays = [arr, arr.transpose(1, 0, 2), arr.transpose(2, 0, 1)]
 
-    def find_bounds(arr):
-        bounds = [[0, arr.shape[0]], [0, arr.shape[1]], [0, arr.shape[2]]]
+    for i in range(len(transposed_arrays)):
+        for start in range(len(transposed_arrays[i])):
+            if np.count_nonzero(transposed_arrays[i][start]) > 255 * threshold and bounds[i][0] == 0:
+                bounds[i][0] = start
+        for end in range(len(transposed_arrays[i]) - 1, 0, -1):
+            if np.count_nonzero(transposed_arrays[i][end]) > 255 * threshold and bounds[i][1] == arr.shape[i]:
+                bounds[i][1] = end
 
-        transposed_arrays = [arr, arr.transpose(1, 0, 2), arr.transpose(2, 0, 1)]
+    return bounds
 
-        for i in range(len(transposed_arrays)):
-            for start in range(len(transposed_arrays[i])):
-                if np.any(transposed_arrays[i][start]) and bounds[i][0] == 0:
-                    bounds[i][0] = start
-            for end in range(len(transposed_arrays[i]) - 1, 0, -1):
-                if np.any(transposed_arrays[i][end]) and bounds[i][1] == arr.shape[i]:
-                    bounds[i][1] = end
 
-        return bounds
-
-    mni_bounds = find_bounds(mni_template_fdata)
-    atlas_bounds = find_bounds(atlas_fdata)
+def atlas_to_image(image: np.ndarray, atlas: np.ndarray):
+    image_bounds = find_bounds(image)
+    atlas_bounds = find_bounds(atlas)
 
     scale = [1, 1, 1]
 
     for dim in range(3):
-        scale[dim] = (mni_bounds[dim][1] - mni_bounds[dim][0]) / (atlas_bounds[dim][1] - atlas_bounds[dim][0])
+        scale[dim] = (image_bounds[dim][1] - image_bounds[dim][0]) / (atlas_bounds[dim][1] - atlas_bounds[dim][0])
 
-    resized_arr = resize(atlas_fdata, (256 * scale[0], 256 * scale[1], 256 * scale[2]), order=0)
+    resized_arr = resize(atlas, (256 * scale[0], 256 * scale[1], 256 * scale[2]), order=0)
 
     window = [[0, 0], [0, 0], [0, 0]]
 
@@ -77,27 +55,116 @@ def load_atlas(atlas_path: str) -> FileBasedImage:
 
     resized_arr = resized_arr[window[0][0]:window[0][1], window[1][0]:window[1][1], window[2][0]:window[2][1]]
 
-    for slc, row, col in np.argwhere(resized_arr != 0):
-        resized_arr[slc][row][col] = fs_to_cont(resized_arr[slc][row][col])
+    resized_bounds = find_bounds(resized_arr)
 
-    nib.save(nib.Nifti1Image(resized_arr, np.eye(4)), atlas_save_path)
+    for axis in range(3):
+        resized_arr = np.roll(resized_arr, image_bounds[axis][0] - resized_bounds[axis][0], axis=axis)
+
+    return resized_arr
+
+def register_to_mni(image, atlas):
+
+    fixed = sitk.ReadImage(image, sitk.sitkFloat32)
+
+    R = sitk.ImageRegistrationMethod()
+    R.SetMetricAsMeanSquares()
+    R.SetOptimizerAsRegularStepGradientDescent(4.0, 0.01, 200)
+    R.SetInitialTransform(sitk.TranslationTransform(fixed.GetDimension()))
+    R.SetInterpolator(sitk.sitkLinear)
+
+    def command_iteration(method):
+        method.GetOptimizerIteration()
+        method.GetMetricValue()
+        method.GetOptimizerPosition()
+
+    R.AddCommand(sitk.sitkIterationEvent, lambda: command_iteration(R))
+
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetReferenceImage(fixed)
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetDefaultPixelValue(0)
+
+    moving = sitk.ReadImage(atlas, sitk.sitkFloat32)
+
+    outTx = R.Execute(fixed, moving)
+    outTx.SetOffset([np.round(x) for x in outTx.GetOffset()])
+    outTx.SetOffset([256 - x if x > 128 else x for x in outTx.GetOffset()])
+
+    resampler.SetTransform(outTx)
+
+    out_img = resampler.Execute(moving)
+
+    sitk.WriteImage(out_img, atlas)
+
+    moved_image_view = nib.load(atlas)
+
+    return moved_image_view
+
+
+def load_atlas(atlas_path: str) -> FileBasedImage:
+    """
+    Load and preprocess atlas from the specified path
+    :param atlas_path: Location of the raw atlas
+    :type atlas_path: str
+    :return: View of the preprocessed atlas
+    :rtype: nibabel.filebasedimages.FileBasedImage
+    """
+
+    dimensions = (256, 256, 256)
+    fdata = np.round(nib.load(atlas_path).get_fdata())
+    fdata = center_pad(fdata, dimensions)
+    atlas_save_path = path.splitext(atlas_path)[0]
+    atlas_save_path = path.splitext(atlas_save_path)[0]
+    atlas_save_path += ".nii.gz"
+
+    for slc, row, col in np.argwhere(fdata == 31):
+        fdata[slc][row][col] = 2
+    for slc, row, col in np.argwhere(fdata == 63):
+        fdata[slc][row][col] = 41
+
+    for slc, row, col in np.argwhere(fdata != 0):
+        fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
+
+    fdata = np.flip(fdata, 0)
+
+    nib.save(nib.Nifti1Image(fdata, AFFINE), atlas_save_path)
 
     return nib.load(atlas_save_path)
 
 
-def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> dict:
-    image_card = len(np.nonzero(image))
-    atlas_card = len(np.nonzero(atlas))
+def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> tuple:
+    image = image.flatten()
+    atlas = atlas.flatten()
     struct_dscs = {s: 0.0 for s in structs}
-    for struct in tqdm(structs):
-        struct_image = np.where(image == struct)
-        struct_atlas = np.where(atlas == struct)
-        int_card = len(np.intersect1d(struct_image, struct_atlas))
+    struct_weights = {s: 0.0 for s in structs}
+    for struct in tqdm(structs, desc="Comparing structures", bar_format=bf):
+        struct_image = image == struct
+        struct_atlas = atlas == struct
 
-        struct_dscs[struct] = (2 * int_card) / (image_card + atlas_card)
+        tp = len(np.where((struct_image == True) & (struct_atlas == True))[0])
+        fp = len(np.where((struct_image == True) & (struct_atlas == False))[0])
+        fn = len(np.where((struct_image == False) & (struct_atlas == True))[0])
 
-    return struct_dscs
+        if not any([tp, fp, fn]):
+            struct_dscs[struct] = 1.0
+        else:
+            struct_dscs[struct] = (2 * tp) / ((2 * tp) + fp + fn)
+
+        struct_weights[struct] = len(image[struct_image])
+
+        pass
+
+    return np.average(list(struct_dscs.values()), weights=list(struct_weights.values())), struct_dscs
 
 
 if __name__ == "__main__":
     atlas = load_atlas(r"labels.mgz")
+    # atlas = nib.load("labels.nii.gz")
+    for path in os.listdir("images/preprocessed_label"):
+        img = nib.load(f"images/preprocessed_label/{path}")
+        resized_atlas = atlas_to_image(img.get_fdata(), atlas.get_fdata())
+        # resized_atlas = register_to_mni("images/preprocessed_label/OAS1_0025_MR1.nii.gz", "labels.nii.gz").get_fdata()
+        # nib.save(nib.Nifti1Image(resized_atlas, AFFINE), "image.nii.gz")
+        avg, dscs = compare_to_atlas(img.get_fdata(), resized_atlas, list(range(1, 37)))
+        print(dscs)
+        print(avg)
