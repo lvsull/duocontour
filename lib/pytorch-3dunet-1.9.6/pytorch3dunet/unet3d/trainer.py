@@ -228,11 +228,22 @@ class UNetTrainer:
         # sets the model in training mode
         self.model.train()
 
+        loader_num = 0
         for t in self.loaders["train"]:
+            loader_num += 1
             logger.info(
-                f"Training iteration [{self.num_iterations}/{self.max_num_iterations}]. "
-                f"Epoch [{self.num_epochs}/{self.max_num_epochs - 1}]"
+                f"Epoch iter [{loader_num}/{len(self.loaders['train'])}] "
+                f"Training iter [{self.num_iterations}/{self.max_num_iterations}]. "
+                f"Epoch [{self.num_epochs}/{self.max_num_epochs - 1}] "
+                f"LR [{self.optimizer.param_groups[0]["lr"]}]"
             )
+
+            tgt = torch.empty((1, 38, 48, 96, 96))
+            multichannel = t[1].numpy()
+            for channel in range(38):
+                tgt[0, channel, :, :, :] = torch.Tensor((multichannel == channel).astype(np.uint8))
+
+            t[1] = tgt
 
             input, target = _split_and_move_to_device(t, self.device)
 
@@ -299,11 +310,11 @@ class UNetTrainer:
             logger.info(f"Maximum number of iterations {self.max_num_iterations} exceeded.")
             return True
 
-        # min_lr = 1e-6
-        # lr = self.optimizer.param_groups[0]["lr"]
-        # if lr < min_lr:
-        #     logger.info(f"Learning rate below the minimum {min_lr}.")
-        #     return True
+        min_lr = 1e-6
+        lr = self.optimizer.param_groups[0]["lr"]
+        if lr < min_lr:
+            logger.info(f"Learning rate below the minimum {min_lr}.")
+            return True
 
         return False
 
@@ -323,6 +334,14 @@ class UNetTrainer:
 
             images_for_logging = []
             for i, t in enumerate(tqdm(self.loaders["val"])):
+
+                tgt = torch.empty((1, 38, 48, 96, 96))
+                multichannel = t[1].numpy()
+                for channel in range(38):
+                    tgt[0, channel, :, :, :] = torch.Tensor((multichannel == channel).astype(np.uint8))
+
+                t[1] = tgt
+
                 input, target = _split_and_move_to_device(t, self.device)
 
                 output, loss = self._forward_pass(input, target)
