@@ -39,7 +39,7 @@ def save_and_get_view(arr: np.ndarray, save_path: str, name: str, header=None):
     :return: None
     :rtype: NoneType
     """
-    corrected_image = nib.Nifti1Image(arr, np.eye(4), header)
+    corrected_image = nib.Nifti1Image(arr, AFFINE, header)
 
     filepath = path.join(save_path, f"{name}.nii.gz")
     nib.save(corrected_image, filepath)
@@ -387,6 +387,9 @@ def register_to_mni(sql_engine: sqlalchemy.engine.base.Engine,
 
         image_data.loc[image_tuple.Index, "image"] = dumps(moved_image_view)
         label_data.loc[image_tuple.Index, "image"] = dumps(moved_label_view)
+
+        if np.count_nonzero(moved_image_view.get_fdata()) == 0:
+            print(f"register_to_mni() failed to register image {image_tuple.name}")
 
     image_data.to_sql(name=save_img, con=sql_engine, if_exists="replace", index=False)
     label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
