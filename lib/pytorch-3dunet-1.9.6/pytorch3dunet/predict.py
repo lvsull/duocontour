@@ -40,14 +40,14 @@ def get_predictor(model: nn.Module, config: dict) -> AbstractPredictor:
     return predictor_class(model, output_dir, out_channels, **predictor_config, device=config["device"])
 
 
-def main():
+def main(config_file):
     """Main entry point for prediction with 3D U-Net models.
 
     Loads configuration from command line arguments, creates the model, loads trained weights,
     runs predictions on test datasets, and computes evaluation metrics if specified.
     """
     # Load configuration
-    config, _ = load_config()
+    config, _ = load_config(config_file)
 
     # Create the model
     model = get_model(config["model"])
