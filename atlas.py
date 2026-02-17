@@ -1,6 +1,7 @@
 from os import path
 import os
 
+import h5py
 import nibabel as nib
 import numpy as np
 import yaml
@@ -158,13 +159,39 @@ def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> tup
 
 
 if __name__ == "__main__":
-    atlas = load_atlas(r"labels.mgz")
+    atlas = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
     # atlas = nib.load("labels.nii.gz")
-    for path in os.listdir("images/preprocessed_label"):
-        img = nib.load(f"images/preprocessed_label/{path}")
-        resized_atlas = atlas_to_image(img.get_fdata(), atlas.get_fdata())
+    for path in os.listdir(r"C:\Users\Liam Sullivan\research-25-26\unet\pred"):
+        pred = h5py.File(f"C:/Users/Liam Sullivan/research-25-26/unet/pred/{path}")["predictions"][:]
+        img = nib.load(f"D:/Liam Sullivan LTS/preprocessed_image/{path.replace("_predictions.h5", ".nii.gz")}").get_fdata()
+        lbl = nib.load(f"D:/Liam Sullivan LTS/preprocessed_label/{path.replace("_predictions.h5", ".nii.gz")}").get_fdata().flatten()
+        for i in range(len(lbl)):
+            if 20 <= lbl[i] <= 29:
+                lbl[i] -= 19
+            elif 30 <= lbl[i] <= 31:
+                lbl[i] -= 16
+            elif 32 <= lbl[i] <= 33:
+                lbl[i] -= 15
+        lbl = lbl.reshape(img.shape)
+        resized_atlas = atlas_to_image(img, atlas.get_fdata()).flatten()
+        for i in range(len(resized_atlas)):
+            if 20 <= resized_atlas[i] <= 29:
+                resized_atlas[i] -= 19
+            elif 30 <= resized_atlas[i] <= 31:
+                resized_atlas[i] -= 16
+            elif 32 <= resized_atlas[i] <= 33:
+                resized_atlas[i] -= 15
+        resized_atlas = resized_atlas.reshape(img.shape)
         # resized_atlas = register_to_mni("images/preprocessed_label/OAS1_0025_MR1.nii.gz", "labels.nii.gz").get_fdata()
-        # nib.save(nib.Nifti1Image(resized_atlas, AFFINE), "image.nii.gz")
-        avg, dscs = compare_to_atlas(img.get_fdata(), resized_atlas, list(range(1, 37)))
-        print(dscs)
-        print(avg)
+        nib.save(nib.Nifti1Image(resized_atlas, AFFINE), "image1.nii.gz")
+        nib.save(nib.Nifti1Image(pred, AFFINE), "image2.nii.gz")
+        pred_avg, pred_dscs = compare_to_atlas(pred, resized_atlas, list(range(1, 37)))
+        gt_avg, gt_dscs = compare_to_atlas(lbl, resized_atlas, list(range(1, 37)))
+        dsc_diffs = {}
+        for key in pred_dscs.keys():
+            try:
+                dsc_diffs[key] = (pred_dscs[key]) / (gt_dscs[key])
+            except ZeroDivisionError:
+                dsc_diffs[key] = 1.0
+        print(dsc_diffs)
+        print(f"{path.replace("_predictions.h5", "")}: {np.round(pred_avg/gt_avg*100, 3)}%")
