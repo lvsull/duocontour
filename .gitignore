@@ -1,8 +1,5 @@
 /.idea/
 /.venv/
-/config.yaml
 /unet/train/
 /unet/validation/
-/unet/train_config.yaml
-/unet/test_config.yaml
 *.log
