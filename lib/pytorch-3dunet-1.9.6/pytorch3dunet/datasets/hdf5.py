@@ -321,7 +321,7 @@ class LazyHDF5Dataset(AbstractHDF5Dataset):
             return f[self.label_internal_path][idx]
 
     def get_raw_padded_patch(self, idx: int) -> np.ndarray:
-        with h5py.File(self.file_path, "r+") as f:
+        with h5py.File(self.file_path, "r+", locking=False) as f:
             if "raw_padded" in f:
                 return f["raw_padded"][idx]
 
