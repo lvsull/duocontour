@@ -16,9 +16,11 @@ from sqlalchemy import create_engine
 from dataloader import load_images
 from preprocessor import reorient, correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
     register_to_mni, scale_pad_labels
-from unet.unet_format_converter import save_images
+from unet.unet_format_converter import images_to_hdf5
 
 logger = logging.getLogger("DuoContour")
+
+NEW_LOG = True
 
 def main():
     start_time = time.time()
@@ -26,18 +28,24 @@ def main():
     with open("config.yaml", "r") as f:
         yaml_file = yaml.safe_load(f)
         database_location = yaml_file["database"]
-        log_file = yaml_file["log_file"]
+        info_log = yaml_file["info_log"]
 
-    with open(log_file, 'w'):
-        pass
+    if NEW_LOG:
+        with open(info_log, 'w'):
+            pass
+    else:
+        div = "=" * 50
+        with open(info_log, 'a') as f:
+            f.write(div + "RUN STARTED" + div + "\n")
+
 
     log_format = "%(asctime)s [%(threadName)s] %(levelname)s %(name)s - %(message)s"
 
-    logging.basicConfig(filename=log_file,
+    logging.basicConfig(filename=info_log,
                         filemode='a',
                         format=log_format,
                         datefmt='%Y-%m-%d %H:%M:%S',
-                        level=logging.DEBUG)
+                        level=logging.INFO)
 
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(log_format))
@@ -45,7 +53,7 @@ def main():
 
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        logger.info("Using device:" + torch.cuda.get_device_name(device))
+        logger.info("Using device: " + torch.cuda.get_device_name(device))
     else:
         device = torch.device("cpu")
         logger.info("Using device: CPU")
@@ -140,16 +148,16 @@ def save_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine) -> None:
     data = images.copy().reset_index(drop=True)
     data["label"] = labels["image"]
 
-    train, temp = train_test_split(data, train_size=0.70)
-    val, test = train_test_split(temp, train_size=0.50)
+    train, temp = train_test_split(data, train_size=0.7)
+    val, test = train_test_split(temp, train_size=0.5)
 
     train.to_sql(name="train", con=sql_engine, if_exists="replace", index=False)
     val.to_sql(name="validation", con=sql_engine, if_exists="replace", index=False)
-    test.to_sql(name="testing", con=sql_engine, if_exists="replace", index=False)
+    test.to_sql(name="test", con=sql_engine, if_exists="replace", index=False)
 
-    save_images(sql_engine, "train", train_path)
-    save_images(sql_engine, "validation", validation_path)
-    save_images(sql_engine, "testing", test_path)
+    images_to_hdf5(sql_engine, "train", train_path)
+    images_to_hdf5(sql_engine, "validation", validation_path)
+    images_to_hdf5(sql_engine, "test", test_path)
 
     logger.info(f"Finished saving to HDF5 in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
