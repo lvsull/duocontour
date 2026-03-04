@@ -42,7 +42,7 @@ def graph_loss_score(csv_file: str, ax1, ax2, title: str = "", y_label: bool = F
 
 
 if __name__ == "__main__":
-anal    log_to_csv("info.log", "output/train.csv", "output/val.csv")
+    log_to_csv("info.log", "output/train.csv", "output/val.csv")
     sns.set_theme(style="whitegrid")
     sns.set_color_codes("bright")
     f, axs = plt.subplots(2, 2, sharex=True)
