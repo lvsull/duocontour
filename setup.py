@@ -5,8 +5,10 @@ Setup functions
 
 import yaml
 
+
 def add_to_line(initial: str, new: str) -> str:
     return initial.strip("\n") + " " + new + "\n"
+
 
 def fill_config():
     with open("config.yaml", "r") as f:
@@ -19,7 +21,7 @@ def fill_config():
             print()
             continue
         try:
-            if lines[i+1].startswith("  ") and not lines[i].startswith("  "):
+            if lines[i + 1].startswith("  ") and not lines[i].startswith("  "):
                 continue
         except IndexError:
             pass

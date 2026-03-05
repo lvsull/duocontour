@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
+
 def images_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_path: str) -> None:
     """
     Saves images from a SQL table to HDF5 files as required by pytorch3dunet

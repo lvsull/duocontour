@@ -395,7 +395,8 @@ def register_to_mni(sql_engine: sqlalchemy.engine.base.Engine,
     label_data.to_sql(name=save_lbl, con=sql_engine, if_exists="replace", index=False)
 
 
-def impute_unknown(sql_engine: sqlalchemy.engine.base.Engine, read_table: str = "mni_registered_label", save_table: str = "imputed_label"):
+def impute_unknown(sql_engine: sqlalchemy.engine.base.Engine,
+                   read_table: str = "mni_registered_label", save_table: str = "imputed_label"):
     """
     Impute unknown values from label data stored in a SQL table
     :param sql_engine: The SQLAlchemy engine to use

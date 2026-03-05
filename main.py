@@ -161,6 +161,7 @@ def save_to_hdf5(sql_engine: sqlalchemy.engine.base.Engine) -> None:
 
     logger.info(f"Finished saving to HDF5 in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
+
 def train_model() -> None:
     """
     Train the U-Net model
@@ -178,6 +179,7 @@ def train_model() -> None:
     train_unet(train_config_file)
 
     logger.info(f"Finished training in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
+
 
 if __name__ == "__main__":
     main()

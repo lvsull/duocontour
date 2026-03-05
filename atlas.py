@@ -1,18 +1,16 @@
-from os import path
 import os
+from os import path
 
+import SimpleITK as sitk
 import h5py
 import nibabel as nib
 import numpy as np
-import yaml
 from nibabel.filebasedimages import FileBasedImage
 from skimage.transform import resize
 from tqdm import tqdm
 
-from preprocessor import center_pad, load_mni_template
+from preprocessor import center_pad
 from unet.unet_format_converter import fs_to_cont
-
-import SimpleITK as sitk
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
@@ -21,7 +19,8 @@ AFFINE = np.array([[-1, 0, 0, 128],
                    [0, -1, 0, 128],
                    [0, 0, 0, 1]])
 
-def find_bounds(arr, threshold = 0.05):
+
+def find_bounds(arr, threshold=0.05):
     bounds = [[0, arr.shape[0]], [0, arr.shape[1]], [0, arr.shape[2]]]
 
     transposed_arrays = [arr, arr.transpose(1, 0, 2), arr.transpose(2, 0, 1)]
@@ -63,8 +62,8 @@ def atlas_to_image(image: np.ndarray, atlas: np.ndarray):
 
     return resized_arr
 
-def register_to_mni(image, atlas):
 
+def register_to_mni(image, atlas):
     fixed = sitk.ReadImage(image, sitk.sitkFloat32)
 
     R = sitk.ImageRegistrationMethod()
@@ -163,8 +162,12 @@ if __name__ == "__main__":
     # atlas = nib.load("labels.nii.gz")
     for path in os.listdir(r"C:\Users\Liam Sullivan\research-25-26\unet\pred"):
         pred = h5py.File(f"C:/Users/Liam Sullivan/research-25-26/unet/pred/{path}")["predictions"][:]
-        img = nib.load(f"D:/Liam Sullivan LTS/preprocessed_image/{path.replace("_predictions.h5", ".nii.gz")}").get_fdata()
-        lbl = nib.load(f"D:/Liam Sullivan LTS/preprocessed_label/{path.replace("_predictions.h5", ".nii.gz")}").get_fdata().flatten()
+        img = (nib.load(
+            f"D:/Liam Sullivan LTS/preprocessed_image/{path.replace("_predictions.h5", ".nii.gz")}")
+               .get_fdata())
+        lbl = (nib.load(
+            f"D:/Liam Sullivan LTS/preprocessed_label/{path.replace("_predictions.h5", ".nii.gz")}")
+               .get_fdata().flatten())
         for i in range(len(lbl)):
             if 20 <= lbl[i] <= 29:
                 lbl[i] -= 19
@@ -194,4 +197,4 @@ if __name__ == "__main__":
             except ZeroDivisionError:
                 dsc_diffs[key] = 1.0
         print(dsc_diffs)
-        print(f"{path.replace("_predictions.h5", "")}: {np.round(pred_avg/gt_avg*100, 3)}%")
+        print(f"{path.replace("_predictions.h5", "")}: {np.round(pred_avg / gt_avg * 100, 3)}%")

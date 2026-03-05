@@ -2,4 +2,6 @@
 /.venv/
 /unet/train/
 /unet/validation/
+/unet/test/
+/unet/checkpoints/
 *.log

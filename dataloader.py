@@ -16,9 +16,10 @@ import sqlalchemy
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
+
 def load_images(sql_engine: sqlalchemy.engine.Engine, filename: str, save_table: str) -> None:
     """
-    Loads all image data into a DataFrame from the location specified in config.yaml
+    Load all image data into a DataFrame from the location specified in config.yaml
     :param sql_engine: SQLAlchemy engine object for the database file
     :type sql_engine: sqlalchemy.engine.Engine
     :param filename: The file name of the OASIS data file, in .mgz format
