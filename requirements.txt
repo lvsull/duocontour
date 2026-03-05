@@ -8,4 +8,8 @@ pandas~=2.3.3
 numpy~=2.4.1
 simpleitk~=2.5.3
 nilearn~=0.13.0
+pyyaml
+scikit-image
+scikit-learn
+h5py
 ./lib/pytorch-3dunet-1.9.6
