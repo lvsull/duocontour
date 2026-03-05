@@ -5,6 +5,7 @@ from tqdm import tqdm
 
 OASIS_DIR = "D:/Liam Sullivan LTS/OASIS"
 
+
 def download_surf():
     links = [
         "https://download.nrg.wustl.edu/data/oasis_cs_freesurfer_disc1.tar.gz",
@@ -39,6 +40,7 @@ def download_surf():
                         pb.update(len(chunk))
                         f.write(chunk)
 
+
 def decompress():
     for file in tqdm(os.listdir(OASIS_DIR)):
         if file.endswith(".tar.gz"):
@@ -50,6 +52,7 @@ def decompress():
         if os.path.isdir(fullpath):
             for i in os.listdir(fullpath):
                 os.rename(f"{fullpath}/{i}", f"{OASIS_DIR}/data/{i}")
+
 
 if __name__ == "__main__":
     download_surf()

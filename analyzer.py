@@ -3,21 +3,28 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-def log_to_csv(log_file: str, train_output_path: str, val_output_path: str):
+
+def log_to_csv(log_file: str, train_output_path: str, val_output_path: str) -> None:
     with open(log_file, 'r') as f:
         lines = f.readlines()
 
-    lines = [re.sub(r".*UNetTrainer - ", "", line) for line in lines if re.search(r".*UNetTrainer.*Loss.*Evaluation score.*", line)]
+    lines = [re.sub(r".*UNetTrainer - ", "", line) for line in lines
+             if re.search(r".*UNetTrainer.*Loss.*Evaluation score.*", line)]
 
     def create_csv(lines, keyword):
         df = pd.DataFrame(columns=["Iterations", "Loss", "Score"])
         filtered_lines = [line for line in lines if re.search(keyword, line)]
         iter = 0
         for line in filtered_lines:
-            iter += 5000 if keyword == "Training" else 25000
-            search = re.search(r".*Loss: (\d*.\d*).*Evaluation score: (\d*.\d*)", line)
-            if search:
-                df.loc[len(df)] = [iter, float(search.group(1)), float(search.group(2))]
+            iter += 5000 if keyword == "Training" else 10000
+
+            score_search = re.search(r".*Loss: (\d*.\d*).*Evaluation score: (\d*.\d*)", line)
+            if score_search:
+                df.loc[len(df)] = [iter, float(score_search.group(1)), float(score_search.group(2))]
+                continue
+
+            iter_search = re.search(
+                r".*Epoch iter \[(\d+)/\d+] Training iter \[(\d+)/\d+]. Epoch \[(\d+)/\d+] LR \[([\d.]+)]", line)
         return df
 
     train_lines = create_csv(lines, "Training")
@@ -42,7 +49,7 @@ def graph_loss_score(csv_file: str, ax1, ax2, title: str = "", y_label: bool = F
 
 
 if __name__ == "__main__":
-    log_to_csv("info_2.log", "output/train.csv", "output/val.csv")
+    log_to_csv("info.log", "output/train.csv", "output/val.csv")
     sns.set_theme(style="whitegrid")
     sns.set_color_codes("bright")
     f, axs = plt.subplots(2, 2, sharex=True)
