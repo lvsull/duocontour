@@ -7,6 +7,7 @@ from typing import Any
 import h5py
 import numpy as np
 import torch
+import yaml
 from skimage import measure
 from torch import nn
 from torch.utils.data import DataLoader
@@ -313,18 +314,23 @@ def dsb_save_batch(output_dir, path, pred, save_segmentation=True, pmaps_thersho
         mask = pred > pmaps_thershold
         return measure.label(mask).astype("uint16")
 
+    with open("config.yaml") as conf:
+        test_conf_path = yaml.safe_load(conf)["unet"]["test_config"]
+        with open(test_conf_path) as test_conf:
+            pred_dir = yaml.safe_load(test_conf)["predictor"]["pred_path"]
+
     # convert to numpy array
     for single_pred, single_path in zip(pred, path, strict=False):
         logger.info(f"Processing {single_path}")
         single_pred = single_pred.squeeze()
 
         # save to h5 file
-        out_file = os.path.splitext(single_path)[0] + "_predictions.h5"
+        out_file = os.path.join(pred_dir, os.path.splitext(os.path.basename(single_pred))[0] + ".hdf5")
         if output_dir is not None:
             out_file = os.path.join(output_dir, os.path.split(out_file)[1])
 
         with h5py.File(out_file, "w") as f:
-            # logger.info(f'Saving output to {out_file}')
+            logger.info(f'Saving output to {out_file}')
             f.create_dataset("predictions", data=single_pred, compression="gzip")
             if save_segmentation:
                 f.create_dataset("segmentation", data=_pmaps_to_seg(single_pred), compression="gzip")
@@ -346,6 +352,12 @@ def _get_output_file(
     Returns:
         path to the output file
     """
+
+    with (open("config.yaml") as conf):
+        test_conf_path = yaml.safe_load(conf)["unet"]["test_config"]
+        with open(test_conf_path) as test_conf:
+            output_dir = yaml.safe_load(test_conf)["predictor"]["pred_path"]
+
     file_path = Path(dataset.file_path)
 
     if output_dir is None:
