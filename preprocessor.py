@@ -15,7 +15,7 @@ import sqlalchemy
 from nilearn import datasets
 from tqdm import tqdm
 
-from unet.unet_format_converter import fs_to_cont
+from unet.unet_format_converter import fs_to_single
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
@@ -483,7 +483,7 @@ def correct_class_labels(sql_engine: sqlalchemy.engine.base.Engine, read_table: 
         orig_image = loads(subject.image)
         fdata = np.round(orig_image.get_fdata())
         for slc, row, col in np.argwhere(fdata != 0):
-            fdata[slc][row][col] = fs_to_cont(fdata[slc][row][col])
+            fdata[slc][row][col] = fs_to_single(fdata[slc][row][col])
 
         corrected_label_view = save_and_get_view(fdata, save_path, subject.name, orig_image.header)
         data.loc[subject.Index, "image"] = dumps(corrected_label_view)
