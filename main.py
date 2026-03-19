@@ -1,6 +1,7 @@
 """
 11/4/25
 """
+import h5py
 import sqlalchemy
 import yaml
 import time
@@ -10,6 +11,7 @@ import sys
 import pandas as pd
 import torch
 from pytorch3dunet.train import main as train_unet
+from pytorch3dunet.predict import main as test_unet
 from sklearn.model_selection import train_test_split
 from sqlalchemy import create_engine
 
@@ -64,6 +66,7 @@ def main():
     preprocess(sql_engine)
     save_to_hdf5(sql_engine)
     train_model()
+    test_model()
 
     logger.info(f"Finished in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
@@ -180,6 +183,24 @@ def train_model() -> None:
 
     logger.info(f"Finished training in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
+
+def test_model() -> None:
+    """
+    Train the U-Net model
+    :return: None
+    :rtype: NoneType
+    """
+    start_time = time.time()
+
+    logger.info("Testing Model...")
+
+    with open("config.yaml", "r") as f:
+        open_file = yaml.safe_load(f)
+        test_config_file = open_file["unet"]["test_config"]
+
+    test_unet(test_config_file)
+
+    logger.info(f"Finished testing in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
 if __name__ == "__main__":
     main()
