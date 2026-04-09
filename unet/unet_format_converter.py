@@ -13,7 +13,6 @@ import numpy as np
 # from preprocessor import AFFINE
 from pathlib import Path
 
-os.chdir("../")
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
