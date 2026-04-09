@@ -238,7 +238,9 @@ class UNetTrainer:
                 f"LR [{self.optimizer.param_groups[0]["lr"]}]"
             )
 
-            tgt = torch.empty((1, 38, 48, 96, 96))
+            tgt_shape = t[1].shape
+
+            tgt = torch.empty((1, 38, tgt_shape[1], tgt_shape[2], tgt_shape[3]))
             multichannel = t[1].numpy()
             for channel in range(38):
                 tgt[0, channel, :, :, :] = torch.Tensor((multichannel == channel).astype(np.uint8))
@@ -310,11 +312,11 @@ class UNetTrainer:
             logger.info(f"Maximum number of iterations {self.max_num_iterations} exceeded.")
             return True
 
-        # min_lr = 1e-6
-        # lr = self.optimizer.param_groups[0]["lr"]
-        # if lr < min_lr:
-        #     logger.info(f"Learning rate below the minimum {min_lr}.")
-        #     return True
+        min_lr = 1e-6
+        lr = self.optimizer.param_groups[0]["lr"]
+        if lr < min_lr:
+            logger.info(f"Learning rate below the minimum {min_lr}.")
+            return True
 
         return False
 
@@ -334,8 +336,9 @@ class UNetTrainer:
 
             images_for_logging = []
             for i, t in enumerate(tqdm(self.loaders["val"])):
+                tgt_shape = t[1].shape
 
-                tgt = torch.empty((1, 38, 48, 96, 96))
+                tgt = torch.empty((1, 38, tgt_shape[1], tgt_shape[2], tgt_shape[3]))
                 multichannel = t[1].numpy()
                 for channel in range(38):
                     tgt[0, channel, :, :, :] = torch.Tensor((multichannel == channel).astype(np.uint8))
