@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from preprocessor import center_pad
 from unet.unet_format_converter import fs_to_cont
+from analyzer import mean_dsc
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
@@ -132,31 +133,6 @@ def load_atlas(atlas_path: str) -> FileBasedImage:
     return nib.load(atlas_save_path)
 
 
-def compare_to_atlas(image: np.ndarray, atlas: np.ndarray, structs: list) -> tuple:
-    image = image.flatten()
-    atlas = atlas.flatten()
-    struct_dscs = {s: 0.0 for s in structs}
-    struct_weights = {s: 0.0 for s in structs}
-    for struct in tqdm(structs, desc="Comparing structures", bar_format=bf):
-        struct_image = image == struct
-        struct_atlas = atlas == struct
-
-        tp = len(np.where((struct_image == True) & (struct_atlas == True))[0])
-        fp = len(np.where((struct_image == True) & (struct_atlas == False))[0])
-        fn = len(np.where((struct_image == False) & (struct_atlas == True))[0])
-
-        if not any([tp, fp, fn]):
-            struct_dscs[struct] = 1.0
-        else:
-            struct_dscs[struct] = (2 * tp) / ((2 * tp) + fp + fn)
-
-        struct_weights[struct] = len(image[struct_image])
-
-        pass
-
-    return np.average(list(struct_dscs.values()), weights=list(struct_weights.values())), struct_dscs
-
-
 if __name__ == "__main__":
     atlas = load_atlas(r"D:\Liam Sullivan LTS\labels.mgz")
     # atlas = nib.load("labels.nii.gz")
@@ -168,28 +144,28 @@ if __name__ == "__main__":
         lbl = (nib.load(
             f"D:/Liam Sullivan LTS/preprocessed_label/{path.replace("_predictions.h5", ".nii.gz")}")
                .get_fdata().flatten())
-        for i in range(len(lbl)):
-            if 20 <= lbl[i] <= 29:
-                lbl[i] -= 19
-            elif 30 <= lbl[i] <= 31:
-                lbl[i] -= 16
-            elif 32 <= lbl[i] <= 33:
-                lbl[i] -= 15
+        # for i in range(len(lbl)):
+        #     if 20 <= lbl[i] <= 29:
+        #         lbl[i] -= 19
+        #     elif 30 <= lbl[i] <= 31:
+        #         lbl[i] -= 16
+        #     elif 32 <= lbl[i] <= 33:
+        #         lbl[i] -= 15
         lbl = lbl.reshape(img.shape)
         resized_atlas = atlas_to_image(img, atlas.get_fdata()).flatten()
-        for i in range(len(resized_atlas)):
-            if 20 <= resized_atlas[i] <= 29:
-                resized_atlas[i] -= 19
-            elif 30 <= resized_atlas[i] <= 31:
-                resized_atlas[i] -= 16
-            elif 32 <= resized_atlas[i] <= 33:
-                resized_atlas[i] -= 15
+        # for i in range(len(resized_atlas)):
+        #     if 20 <= resized_atlas[i] <= 29:
+        #         resized_atlas[i] -= 19
+        #     elif 30 <= resized_atlas[i] <= 31:
+        #         resized_atlas[i] -= 16
+        #     elif 32 <= resized_atlas[i] <= 33:
+        #         resized_atlas[i] -= 15
         resized_atlas = resized_atlas.reshape(img.shape)
         # resized_atlas = register_to_mni("images/preprocessed_label/OAS1_0025_MR1.nii.gz", "labels.nii.gz").get_fdata()
         nib.save(nib.Nifti1Image(resized_atlas, AFFINE), "image1.nii.gz")
         nib.save(nib.Nifti1Image(pred, AFFINE), "image2.nii.gz")
-        pred_avg, pred_dscs = compare_to_atlas(pred, resized_atlas, list(range(1, 37)))
-        gt_avg, gt_dscs = compare_to_atlas(lbl, resized_atlas, list(range(1, 37)))
+        pred_avg, pred_dscs = mean_dsc(pred, resized_atlas, list(range(1, 37)))
+        gt_avg, gt_dscs = mean_dsc(lbl, resized_atlas, list(range(1, 37)))
         dsc_diffs = {}
         for key in pred_dscs.keys():
             try:

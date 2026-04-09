@@ -1,6 +1,8 @@
 import numpy as np
 from tqdm import tqdm
 
+bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
+
 def mean_dsc(img1: np.ndarray, img2: np.ndarray, structs: list) -> tuple:
     img1 = img1.flatten()
     img2 = img2.flatten()
