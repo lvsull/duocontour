@@ -76,7 +76,7 @@ def hdf5_to_images(sql_engine: sqlalchemy.engine.base.Engine, table: str, save_p
 
     data = pd.DataFrame(columns=["name", "image"])
 
-    for filepath in read_path.iterdir():
+    for filepath in tqdm(read_path.iterdir(), desc="Converting to Images"):
         hf = h5py.File(filepath, 'r')
         fdata = hf.get("predictions")[()]
         img = nib.Nifti1Image(fdata, AFFINE)
