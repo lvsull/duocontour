@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from dataloader import load_images
 from preprocessor import reorient, correct_bias_fields, correct_class_labels, impute_unknown, normalize, pad_images, \
     register_to_mni, scale_pad_labels
-from unet.unet_format_converter import images_to_hdf5
+from unet.unet_format_converter import images_to_hdf5, hdf5_to_images
 
 logger = logging.getLogger("DuoContour")
 
@@ -62,11 +62,13 @@ def main():
 
     sql_engine = create_engine(f'sqlite:///{database_location}', echo=False)
 
-    load_all(sql_engine)
-    preprocess(sql_engine)
-    save_to_hdf5(sql_engine)
-    train_model()
-    test_model()
+    # load_all(sql_engine)
+    # preprocess(sql_engine)
+    # save_to_hdf5(sql_engine)
+    # train_model()
+    # test_model()
+
+    hdf5_to_images(sql_engine, "predictions", "output/pred")
 
     logger.info(f"Finished in {time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))}")
 
