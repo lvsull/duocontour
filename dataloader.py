@@ -3,16 +3,14 @@
 Provides tools to load data from an external file source
 """
 
-from yaml import safe_load
 import os
 import pickle
-from time import time
 
 import nibabel as nib
-import numpy as np
 import pandas as pd
-from tqdm import tqdm
 import sqlalchemy
+from tqdm import tqdm
+from yaml import safe_load
 
 bf = "{desc:<30}{percentage:3.0f}%|{bar:20}{r_bar}"
 
