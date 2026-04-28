@@ -1,4 +1,5 @@
 import pickle
+import shutil
 from os import mkdir
 from shutil import rmtree
 
@@ -92,6 +93,25 @@ c_to_s = seg_values["SingleID"].to_dict()
 f_to_s = pd.read_csv("seg_values.csv", index_col="SegID")["SingleID"].to_dict()
 
 
+def single_to_channels(img_dir: str, save_path: str, channels=(1, 22)) -> None:
+    try:
+        shutil.rmtree(save_path, ignore_errors=True)
+    except FileNotFoundError:
+        pass
+    mkdir(save_path)
+
+    for path in tqdm(Path(img_dir).iterdir(), desc="Converting to Channel Images", bar_format=bf):
+        img = nib.load(str(path)).get_fdata().astype(np.float64)
+        base = path.stem.split("_predictions")[0]
+        mkdir(f"{save_path}/{base}")
+
+        for channel in range(channels[0], channels[1] + 1):
+            channel_img = (img == channel).astype(np.float64)
+            nib.save(nib.Nifti1Image(channel_img, AFFINE), f"{save_path}/{base}/{channel}.nii.gz")
+
+        nib.save(nib.Nifti1Image(img, AFFINE), f"{save_path}/{base}/label.nii.gz")
+
+
 def fs_to_cont(value: int) -> int:
     """
     Convert a label value in FreeSurfer format to continuous format
@@ -145,4 +165,5 @@ if __name__ == "__main__":
     #     with h5py.File(file, "w") as f:
     #         f.create_dataset("predictions", data=label)
 
-    hdf5_to_images(sqlalchemy.create_engine(f'sqlite:///{r"D:\Liam Sullivan LTS\images.db"}', echo=False), "predictions", "output/pred")
+    os.chdir("..")
+    single_to_channels("./output/pred", save_path="./output/unet_output")
