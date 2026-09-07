@@ -15,6 +15,7 @@ In recent years, many algorithms to assist with contouring have been developed u
 One such method that has resulted in significant success is the use of U-Nets, a type of convolutional neural network named for its U-shape (Fig. 1) due to its use of pooling downsampling followed by upscaling—essentially blurring and re-increasing the image resolution, creating a more fuzzy, generalized image to be used alongside sharper images—to improve its recognition of patterns (Çiçek et al., 2016; Coupé et al., 2020) and known for its ability to segment a variety of types of images. This success is partially due to the U-Net's ability to identify and generalize patterns, as well as its ability to use 3-dimensional analysis to work with entire images at once instead of splitting them up into 2-dimensional slices (Billot, Greve, et al., 2023).
 
 ![Visualization of the steps of a U-Net](assets/u-net.png)
+
 <small>**Figure 1.** Visualization of the steps of a U-Net. The example image, a 256x256 RGB image, is downscaled four times, and then upsampled four times to create k masks of the original resolution. Courtesy of Yazdani (2019).</small>
 
 In addition to DL techniques, many contouring algorithms use classical techniques such as active contour (AC), which involves drawing curves around edges in the image to separate different areas, or atlas-based segmentation, in which a selection of images are overlaid on each other and contoured to create an "atlas" against which other images can be compared. These techniques are often used to reduce computational demand (Almijalli et al., 2025; Ding et al., 2022; Gibbons et al., 2022; Ng et al., 2022). The advantage of using non-training methods is that they require less computational power and do not require the same training datasets of hundreds of samples that are required by DL approaches. These approaches can reach similar performance levels to DL-based methods (Almijalli et al., 2025), but may also be less generalizable to other data (Ng et al., 2022).
@@ -49,6 +50,7 @@ The DL component of the algorithm was created using a 3D U-Net library created b
 In order to establish a baseline against which to compare the performance of the experimental model, the DL component was analyzed alone (Fig. 2). While this was not a perfect representation of the tools currently available for medical image contouring, it allowed comparison between the performance of DL alone compared to DL and AC together. Training images were input to the DL model, and the accuracy of the resulting contours were compared to the ground truth labels using DSC and MDA.
 
 ![Baseline and experimental models](assets/duocontour_models.png)
+
 <small>**Figure 2.** Baseline and experimental models. The baseline model consists of the deep learning (DL) model alone, where preprocessed images are input directly into the DL component, and the resulting contours are final. In the experimental model, the output of the DL component is compared against an atlas using the Dice similarity coefficient (DSC). If the DSC is higher than 0.5, the contour is output as the final contour. If the DSC is less than 0.5, the contour is run through active contour (AC) and the resulting contour is output as the final contour.</small>
 
 ### Experimental Component Analysis
@@ -60,16 +62,18 @@ The DL model reached a minimum loss of 0.075 after 48 epochs, or 410,000 iterati
 The experimental algorithm (DL and AC components) showed an approximately 7.79% increase (+0.06) in mean DSC compared to the baseline algorithm (DL alone). However, mean MDA also increased by approximately 45.1% (+8.2 mm) (Table 1). Median measurements followed a similar trend, with DSC increasing from 0.76 after DL alone to 0.84 after both DL and AC, and MDA increasing from 17.8 to 26.2 mm. The IQR of both metrics decreased: DSC went from 0.25 to 0.21 (-16%), and MDA fell from 17.4 to 13.9 mm (-20.1%) (Fig. 4).
 
 ![Loss and evaluation score vs. iteration for training and validation of the baseline mode.](assets/loss_eval.png)
+
 <small>**Figure 3.** Loss and evaluation score vs. iteration for training and validation of the baseline mode. The model reached a minimum loss of 0.075 after 48 epochs (410,000 iterations) and a maximum mean DSC of 0.77 after 54 epochs (560,000 iterations).</small>
 
-<small>**Table 1.** Mean DSC (higher is better) and MDA (lower is better) values for baseline and experimental models.
-</small>
+<small>**Table 1.** Mean DSC (higher is better) and MDA (lower is better) values for baseline and experimental models.</small>
+
 | Metric | Baseline (DL) | Experimental (DL + AC) | % Change |
 |---|---|---|---|
 | DSC | 0.77 | 0.83 | +7.79% |
 | MDA | 18.2 mm | 26.4 mm | +45.1% |
 
 ![DSC and MDA after U-Net contouring alone and after both DL and AC stages.](assets/dsc_mda.png)
+
 <small>**Figure 4.** DSC and MDA after U-Net (DL) contouring alone and after both DL and AC stages. Median DSC increased from 0.76 to 0.84, and the IQR decreased from 0.25 to 0.21. Median MDA increased from 17.8 to 26.2 mm, and the IQR decreased from 17.4 to 13.9 mm.</small>
 
 ## Discussion
